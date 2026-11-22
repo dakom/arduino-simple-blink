@@ -1,0 +1,152 @@
+version: '3'
+
+silent: true
+
+vars:
+  NAME: simple-blink
+  MCU: atmega328p           # the chip on the Arduino Uno
+  F_CPU: 16000000UL         # Uno clock speed (16 MHz) — _delay_ms() needs this
+  SRC_DIR: src
+  BUILD_DIR: build
+  # Compiler flags shared by the real build AND the editor (.clangd) — change them here only
+  CFLAGS_COMMON: >-
+    -std=c23
+    -mmcu={{.MCU}}
+    -DF_CPU={{.F_CPU}}
+    -Wall -Wextra
+    -ffunction-sections -fdata-sections
+  OPT_RELEASE: -Os          # smallest/fastest code
+  OPT_DEBUG: -Og -g3        # easier to step through
+
+tasks:
+  default:
+    desc: List available tasks
+    cmds:
+      - task --list
+    silent: true
+
+  build:
+    desc: Compile firmware → build/<mode>/simple-blink.hex  (MODE=debug for a debug build)
+    label: 'build-{{.MODE}}'    # separate up-to-date tracking per mode
+    deps: [clangd]              # keep editor config in sync with these flags
+    vars:
+      MODE: '{{.MODE | default "release"}}'   # release | debug
+      # release = smallest/fastest code, debug = easier to step through
+      OPT: '{{if eq .MODE "debug"}}{{.OPT_DEBUG}}{{else}}{{.OPT_RELEASE}}{{end}}'
+      OUT_DIR: '{{.BUILD_DIR}}/{{.MODE}}'
+      CFLAGS: '{{.CFLAGS_COMMON}} {{.OPT}}'
+      LDFLAGS: -Wl,--gc-sections
+    sources:
+      - '{{.SRC_DIR}}/**/*.c'
+      - '{{.SRC_DIR}}/**/*.h'
+      - Taskfile.yml
+    generates:
+      - '{{.OUT_DIR}}/{{.NAME}}.hex'
+    preconditions:
+      - sh: ls {{.SRC_DIR}}/*.c >/dev/null 2>&1
+        msg: 'No .c files found in {{.SRC_DIR}}/ — create {{.SRC_DIR}}/main.c first'
+    cmds:
+      - mkdir -p {{.OUT_DIR}}
+      # 1. compile + link all .c files into an ELF (has debug info, symbols, etc.)
+      - avr-gcc {{.CFLAGS}} {{.LDFLAGS}} {{.SRC_DIR}}/*.c -o {{.OUT_DIR}}/{{.NAME}}.elf
+      # 2. extract just the program bytes as Intel HEX — what SimulIDE / the chip loads
+      - avr-objcopy -O ihex -R .eeprom {{.OUT_DIR}}/{{.NAME}}.elf {{.OUT_DIR}}/{{.NAME}}.hex
+      # 3. show how much flash/RAM we use
+      - avr-size -C --mcu={{.MCU}} {{.OUT_DIR}}/{{.NAME}}.elf
+
+  debug:
+    desc: Debug build (-Og -g3) → build/debug/
+    cmds:
+      - task: build
+        vars: { MODE: debug }
+
+  dev:
+    desc: Watch src/ and rebuild on every save (then reload firmware in SimulIDE)
+    watch: true
+    sources:
+      - '{{.SRC_DIR}}/**/*.c'
+      - '{{.SRC_DIR}}/**/*.h'
+    cmds:
+      - task: build
+
+  flash:
+    desc: Build and upload to the Uno over USB  (UNO_PORT=/dev/cu.xxx to pick the port)
+    preconditions:
+      - sh: command -v avrdude
+        msg: 'avrdude not found — install it with: brew install avrdude'
+    cmds:
+      - task: build
+        vars: { MODE: release }
+      # The port name changes between sockets, so look the Uno up by its USB vendor:product ID.
+      # (avrdude can't do this itself: Homebrew builds it without libserialport.)
+      # It's UNO_PORT, not PORT, because Task also reads env vars and PORT is a common one.
+      - |
+        port='{{.UNO_PORT}}'
+        if [ -z "$port" ]; then
+          # ioreg prints each USB device's IDs (in decimal) just above its serial port:
+          #   9025:67 = 2341:0043, 9025:579 = 2341:0243, 9025:1 = 2341:0001, 10755:67 = 2a03:0043
+          ports=$(ioreg -r -c IOUSBHostDevice -l -w0 | LC_ALL=C awk '
+            /"idVendor" = /  { vendor = $NF }
+            /"idProduct" = / { product = $NF }
+            /"IOCalloutDevice" = / {
+              id = vendor ":" product
+              if (id ~ /^(9025:(67|579|1)|10755:67)$/) { gsub(/"/, "", $NF); print $NF }
+            }' | sort -u)
+          case $(echo "$ports" | grep -c .) in
+            1)
+              port=$ports ;;
+            0)
+              echo "No Uno found. Check that it is plugged in with a data (not charge-only) cable." >&2
+              echo "For a clone, find its port with 'ls /dev/cu.*', then: task flash UNO_PORT=<port>" >&2
+              exit 1 ;;
+            *)
+              echo "More than one Uno found:" >&2
+              echo "$ports" >&2
+              echo "Choose one with: task flash UNO_PORT=<port>" >&2
+              exit 1 ;;
+          esac
+        fi
+        echo "Flashing Uno on $port"
+        avrdude -c arduino -p m328p -P "$port" -b 115200 -U flash:w:{{.BUILD_DIR}}/release/{{.NAME}}.hex:i
+
+  fmt:
+    desc: Format all C files in src/ (style lives in .clang-format)
+    cmds:
+      # xcrun finds the clang-format bundled with Xcode, which isn't on PATH
+      # --verbose lists each file, since this Taskfile is otherwise silent
+      - find {{.SRC_DIR}} -type f \( -name '*.c' -o -name '*.h' \) -exec xcrun clang-format -i --verbose {} +
+
+  clangd:
+    desc: Generate .clangd so your editor finds the AVR headers (same flags as avr-gcc)
+    silent: true                # behind-the-scenes helper: don't print its script or "up to date"
+    sources:
+      - Taskfile.yml
+    generates:
+      - .clangd
+    cmds:
+      - |
+        {
+          echo "# Generated by 'task clangd' — do not edit by hand."
+          echo "# Tells clangd (editor autocomplete/errors) to parse code the way avr-gcc compiles it."
+          echo "CompileFlags:"
+          echo "  Add:"
+          # --target=avr: clang's name for the AVR chip family
+          # -xc: treat every file (including .h headers) as C, not C++
+          # -nostdinc: don't use the Mac's headers, only avr-gcc's (added below)
+          for f in --target=avr -xc {{.CFLAGS_COMMON}} {{.OPT_RELEASE}} -nostdinc; do
+            echo "    - $f"
+          done
+          # avr-gcc defines a few macros clang doesn't; avr-libc needs them
+          echo | avr-gcc -mmcu={{.MCU}} -dM -E -xc - | grep -oE '__AVR_(HAVE_SPH|SP8)__' | while read -r m; do
+            echo "    - -D$m"
+          done
+          # use avr-gcc's own header folders (where avr/io.h lives)
+          echo | avr-gcc -mmcu={{.MCU}} -xc -E -v - 2>&1 | sed -n '/#include <...>/,/End of search/{/^ /p;}' | while read -r p; do
+            echo "    - -isystem$(realpath "$p")"
+          done
+        } > .clangd
+
+  clean:
+    desc: Delete build output
+    cmds:
+      - rm -rf {{.BUILD_DIR}}

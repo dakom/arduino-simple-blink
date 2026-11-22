@@ -1,0 +1,22 @@
+# C code style, applied by clangd when the editor formats.
+# All options: https://clang.llvm.org/docs/ClangFormatStyleOptions.html
+BasedOnStyle: LLVM
+
+IndentWidth: 4
+ColumnLimit: 100
+
+# `void f(void) {` on one line, and `if (x)` with a space
+BreakBeforeBraces: Attach
+SpaceBeforeParens: ControlStatements
+
+# `uint8_t *reg`, and leave `const` wherever it was written
+PointerAlignment: Right
+QualifierAlignment: Leave
+
+# Always expand functions and enums, even tiny ones
+AllowShortFunctionsOnASingleLine: None
+AllowShortEnumsOnASingleLine: false
+
+# At most one blank line in a row
+MaxEmptyLinesToKeep: 1
+InsertNewlineAtEOF: true
