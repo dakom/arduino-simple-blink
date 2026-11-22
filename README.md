@@ -8,11 +8,15 @@ While the switch is on, the LED is lit.
 
 ## Circuit
 
-```
-D11 ── 180 Ω ── LED anode (+)   LED cathode (−) ── GND
-D9  ── switch ── GND
-```
+<a href="simulide-screenshot.png">
+  <img src="simulide-screenshot.png" width="360"
+       alt="Uno Rev3 in SimulIDE: pin 11 goes through a 180 ohm resistor and an LED to GND, and pin 9 goes through a switch to GND">
+</a>
 
+*Click the image to see it full size.*
+
+- **LED polarity:** the screenshot doesn't mark it. The anode (+) connects to the resistor and the
+  cathode (−) to GND.
 - **Resistor:** for an LED with a 2.4 V forward voltage, 180 Ω gives about
   `(5 V − 2.4 V) / 180 Ω ≈ 14 mA`, comfortably under a 20 mA per-pin design limit. Recalculate
   for other LEDs.
@@ -72,6 +76,7 @@ release `.hex` by itself.
 | `src/main.c`                | The program                                           |
 | `src/pins.h`, `src/pins.c`  | A tiny digital I/O API over the DDRx/PORTx/PINx registers |
 | `circuit/simple-blink.sim2` | SimulIDE circuit                                      |
+| `simulide-screenshot.png`   | Picture of the circuit                                |
 | `Taskfile.yml`              | Build, upload and formatting commands                 |
 | `.clang-format`, `.zed/`    | Code style and [Zed](https://zed.dev/) settings       |
 
