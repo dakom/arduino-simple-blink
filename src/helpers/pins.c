@@ -10,7 +10,6 @@
  */
 #include "pins.h"
 #include <avr/io.h>
-#include <stdint.h>
 
 typedef enum pin_group : uint8_t {
     PIN_GROUP_B,
