@@ -1,0 +1,55 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Serial Monitor</title>
+  <link rel="stylesheet" href="style.css">
+  <script type="module" src="app.js"></script>
+</head>
+<body>
+  <header class="bar">
+    <h1>Serial Monitor</h1>
+    <span id="status" class="status" data-state="idle">
+      <span class="dot"></span><span id="status-text">Disconnected</span>
+    </span>
+    <div class="controls">
+      <label class="field">
+        <span>Baud</span>
+        <select id="baud">
+          <option>1200</option><option>2400</option><option>4800</option>
+          <option>9600</option><option>19200</option><option>38400</option>
+          <option>57600</option><option>115200</option>
+        </select>
+      </label>
+      <label class="check" title="List every serial device, not just Arduino boards">
+        <input id="any-device" type="checkbox"> Any device
+      </label>
+      <button id="clear" class="ghost" type="button">Clear</button>
+      <button id="connect" class="primary" type="button">Connect</button>
+    </div>
+  </header>
+
+  <p id="unsupported" class="notice" hidden>
+    This browser can't talk to serial ports. Open this page in a desktop version of
+    Chrome, Edge or Brave.
+  </p>
+
+  <main id="log" class="log" aria-live="polite">
+    <p class="empty">
+      Connect your board to see what it prints.<br>
+      Connecting resets an Uno, so it starts again from the top.
+    </p>
+  </main>
+
+  <form id="send" class="send">
+    <input id="send-text" type="text" placeholder="Send to the board…" autocomplete="off" disabled>
+    <select id="send-ending" title="Line ending added to what you send" disabled>
+      <option value="">No line ending</option>
+      <option value="&#10;">\n</option>
+      <option value="&#13;&#10;" selected>\r\n</option>
+    </select>
+    <button class="primary" type="submit" disabled>Send</button>
+  </form>
+</body>
+</html>
