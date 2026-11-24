@@ -5,8 +5,12 @@ silent: true
 vars:
   NAME: simple-blink
   MCU: atmega328p           # the chip on the Arduino Uno
-  F_CPU: 16000000UL         # Uno clock speed (16 MHz) — _delay_ms() needs this
+  F_CPU: 16000000UL         # Uno clock speed (16 MHz): the baud and timer math, and _delay_ms(), need it
+  BAUD: 9600                # serial speed for `task monitor`; must match baud_rate in src/main.c
+  FRONTEND_DIR: frontend
+  MONITOR_PORT: 8765        # localhost port the browser serial monitor is served on
   SRC_DIR: src
+  TEST_DIR: test
   BUILD_DIR: build
   # Compiler flags shared by the real build AND the editor (.clangd) — change them here only
   CFLAGS_COMMON: >-
@@ -17,6 +21,13 @@ vars:
     -ffunction-sections -fdata-sections
   OPT_RELEASE: -Os          # smallest/fastest code
   OPT_DEBUG: -Og -g3        # easier to step through
+  # Unit tests run on this Mac, not the chip, so they use the Mac's own clang.
+  # The sanitizers stop the test with a report on out-of-bounds access, overflow, etc.
+  HOST_CFLAGS: >-
+    -std=c23
+    -Wall -Wextra
+    -g -fno-omit-frame-pointer
+    -fsanitize=address,undefined
 
 tasks:
   default:
@@ -43,12 +54,14 @@ tasks:
     generates:
       - '{{.OUT_DIR}}/{{.NAME}}.hex'
     preconditions:
-      - sh: ls {{.SRC_DIR}}/*.c >/dev/null 2>&1
+      - sh: '[ -n "$(find {{.SRC_DIR}} -name "*.c")" ]'
         msg: 'No .c files found in {{.SRC_DIR}}/ — create {{.SRC_DIR}}/main.c first'
     cmds:
       - mkdir -p {{.OUT_DIR}}
-      # 1. compile + link all .c files into an ELF (has debug info, symbols, etc.)
-      - avr-gcc {{.CFLAGS}} {{.LDFLAGS}} {{.SRC_DIR}}/*.c -o {{.OUT_DIR}}/{{.NAME}}.elf
+      # 1. compile + link every .c file under src/, including subfolders like src/common/,
+      #    into an ELF (has debug info, symbols, etc.). -I src lets any file include
+      #    another by its path from src/, e.g. #include "common/pins.h".
+      - avr-gcc {{.CFLAGS}} {{.LDFLAGS}} -I {{.SRC_DIR}} $(find {{.SRC_DIR}} -name '*.c' | sort) -o {{.OUT_DIR}}/{{.NAME}}.elf
       # 2. extract just the program bytes as Intel HEX — what SimulIDE / the chip loads
       - avr-objcopy -O ihex -R .eeprom {{.OUT_DIR}}/{{.NAME}}.elf {{.OUT_DIR}}/{{.NAME}}.hex
       # 3. show how much flash/RAM we use
@@ -61,13 +74,16 @@ tasks:
         vars: { MODE: debug }
 
   dev:
-    desc: Watch src/ and rebuild on every save (then reload firmware in SimulIDE)
-    watch: true
-    sources:
-      - '{{.SRC_DIR}}/**/*.c'
-      - '{{.SRC_DIR}}/**/*.h'
+    desc: Watch src/ and rebuild on every save (then reload firmware in SimulIDE) (needs watchexec)
+    preconditions:
+      - sh: command -v watchexec
+        msg: 'watchexec not found — install it with: brew install watchexec'
     cmds:
-      - task: build
+      # Same watcher as test:watch; see the note there
+      - >-
+        watchexec --clear --on-busy-update=queue
+        --watch {{.SRC_DIR}} --exts c,h
+        -- task build
 
   flash:
     desc: Build and upload to the Uno over USB  (UNO_PORT=/dev/cu.xxx to pick the port)
@@ -77,47 +93,108 @@ tasks:
     cmds:
       - task: build
         vars: { MODE: release }
-      # The port name changes between sockets, so look the Uno up by its USB vendor:product ID.
+      # Finds the Uno by its USB ID, since the port name changes between sockets.
       # (avrdude can't do this itself: Homebrew builds it without libserialport.)
       # It's UNO_PORT, not PORT, because Task also reads env vars and PORT is a common one.
       - |
-        port='{{.UNO_PORT}}'
-        if [ -z "$port" ]; then
-          # ioreg prints each USB device's IDs (in decimal) just above its serial port:
-          #   9025:67 = 2341:0043, 9025:579 = 2341:0243, 9025:1 = 2341:0001, 10755:67 = 2a03:0043
-          ports=$(ioreg -r -c IOUSBHostDevice -l -w0 | LC_ALL=C awk '
-            /"idVendor" = /  { vendor = $NF }
-            /"idProduct" = / { product = $NF }
-            /"IOCalloutDevice" = / {
-              id = vendor ":" product
-              if (id ~ /^(9025:(67|579|1)|10755:67)$/) { gsub(/"/, "", $NF); print $NF }
-            }' | sort -u)
-          case $(echo "$ports" | grep -c .) in
-            1)
-              port=$ports ;;
-            0)
-              echo "No Uno found. Check that it is plugged in with a data (not charge-only) cable." >&2
-              echo "For a clone, find its port with 'ls /dev/cu.*', then: task flash UNO_PORT=<port>" >&2
-              exit 1 ;;
-            *)
-              echo "More than one Uno found:" >&2
-              echo "$ports" >&2
-              echo "Choose one with: task flash UNO_PORT=<port>" >&2
-              exit 1 ;;
-          esac
-        fi
+        port=$(scripts/find-uno-port.sh '{{.UNO_PORT}}') || exit 1
         echo "Flashing Uno on $port"
         avrdude -c arduino -p m328p -P "$port" -b 115200 -U flash:w:{{.BUILD_DIR}}/release/{{.NAME}}.hex:i
 
+  monitor:
+    desc: Open the serial monitor in the browser (Chrome, Edge or Brave); Ctrl-C stops it
+    interactive: true           # so Ctrl-C reaches the server
+    vars:
+      URL: 'http://127.0.0.1:{{.MONITOR_PORT}}/?baud={{.BAUD}}'
+    preconditions:
+      - sh: '! lsof -nP -iTCP:{{.MONITOR_PORT}} -sTCP:LISTEN >/dev/null 2>&1'
+        msg: 'Port {{.MONITOR_PORT}} is already in use (another monitor still running?). Pick another: task monitor MONITOR_PORT=8766'
+    cmds:
+      # WebSerial only works on secure pages: https://, or http:// from this computer
+      # (127.0.0.1 / localhost). Python's built-in server is enough for static files.
+      # The browser opens a second after the server starts. WebSerial needs a
+      # Chromium browser, so prefer one of those over the system default.
+      - |
+        echo "Serial monitor: {{.URL}}  (Ctrl-C to stop)"
+        (
+          sleep 1
+          for app in "Google Chrome" "Microsoft Edge" "Brave Browser" "Chromium"; do
+            open -a "$app" "{{.URL}}" 2>/dev/null && exit 0
+          done
+          open "{{.URL}}"
+        ) &
+        python3 -m http.server {{.MONITOR_PORT}} --bind 127.0.0.1 --directory {{.FRONTEND_DIR}}
+
+  monitor:terminal:
+    desc: Show the Uno's serial output in this terminal (quit with Ctrl-A, then K, then Y)
+    interactive: true           # screen needs the real terminal, not Task's output capture
+    cmds:
+      - |
+        port=$(scripts/find-uno-port.sh '{{.UNO_PORT}}') || exit 1
+        echo "Opening $port at {{.BAUD}} baud: quit with Ctrl-A, then K, then Y"
+        echo "(Opening the port resets the Uno, so it starts again from the top.)"
+        sleep 1
+        screen "$port" {{.BAUD}}
+
+  test:
+    desc: Run the unit tests on this Mac (test/<name>_test.c is linked with <name>.c from anywhere in src/)
+    deps: [clangd]
+    preconditions:
+      - sh: ls {{.TEST_DIR}}/*_test.c >/dev/null 2>&1
+        msg: 'No tests found — create {{.TEST_DIR}}/<name>_test.c first'
+    cmds:
+      - mkdir -p {{.BUILD_DIR}}/test
+      # Each test is its own program: compile it with the matching file from src/ (in any
+      # subfolder), run it, and carry on to the next one even if it fails, so you see
+      # every result.
+      - |
+        failed=0
+        for test_file in {{.TEST_DIR}}/*_test.c; do
+          name=$(basename "$test_file" _test.c)
+          exe={{.BUILD_DIR}}/test/${name}_test
+          echo "── $name"
+          src_file=$(find {{.SRC_DIR}} -name "$name.c")
+          if [ "$(echo "$src_file" | grep -c .)" -ne 1 ]; then
+            echo "   expected exactly one $name.c under {{.SRC_DIR}}/, found: ${src_file:-none}"
+            echo "   FAILED"
+            failed=$((failed + 1))
+            continue
+          fi
+          if xcrun clang {{.HOST_CFLAGS}} -I {{.SRC_DIR}} "$test_file" "$src_file" -o "$exe" && "$exe"; then
+            echo "   passed"
+          else
+            echo "   FAILED"
+            failed=$((failed + 1))
+          fi
+        done
+        if [ "$failed" -ne 0 ]; then
+          echo "$failed test file(s) failed"
+          exit 1
+        fi
+
+  test:watch:
+    desc: Re-run the unit tests every time a file in src/ or test/ changes (needs watchexec)
+    preconditions:
+      - sh: command -v watchexec
+        msg: 'watchexec not found — install it with: brew install watchexec'
+    cmds:
+      # watchexec instead of Task's own `watch: true`, which runs several overlapping
+      # times per save. --clear starts each run on a clean screen; --on-busy-update=queue
+      # lets a running test finish before the next one starts.
+      - >-
+        watchexec --clear --on-busy-update=queue
+        --watch {{.SRC_DIR}} --watch {{.TEST_DIR}} --exts c,h
+        -- task test
+
   fmt:
-    desc: Format all C files in src/ (style lives in .clang-format)
+    desc: Format all C files in src/ and test/ (style lives in .clang-format)
     cmds:
       # xcrun finds the clang-format bundled with Xcode, which isn't on PATH
       # --verbose lists each file, since this Taskfile is otherwise silent
-      - find {{.SRC_DIR}} -type f \( -name '*.c' -o -name '*.h' \) -exec xcrun clang-format -i --verbose {} +
+      - find {{.SRC_DIR}} {{.TEST_DIR}} -type f \( -name '*.c' -o -name '*.h' \) -exec xcrun clang-format -i --verbose {} +
 
   clangd:
-    desc: Generate .clangd so your editor finds the AVR headers (same flags as avr-gcc)
+    desc: Generate .clangd so your editor parses src/ as avr-gcc does, and test/ as the Mac's clang does
     silent: true                # behind-the-scenes helper: don't print its script or "up to date"
     sources:
       - Taskfile.yml
@@ -127,13 +204,28 @@ tasks:
       - |
         {
           echo "# Generated by 'task clangd' — do not edit by hand."
-          echo "# Tells clangd (editor autocomplete/errors) to parse code the way avr-gcc compiles it."
+          echo "# Tells clangd (editor autocomplete/errors) how each file is compiled."
+          echo "# Each section between '---' lines applies to the paths in its If: block."
+          echo
+          echo "# test/ runs on this Mac: the Mac's own headers, plus src/ for the code under test"
+          echo "If:"
+          echo "  PathMatch: {{.TEST_DIR}}/.*"
+          echo "CompileFlags:"
+          echo "  Add:"
+          for f in -xc {{.HOST_CFLAGS}} -isysroot"$(xcrun --show-sdk-path)" -I"$(realpath {{.SRC_DIR}})"; do
+            echo "    - $f"
+          done
+          echo "---"
+          echo "# Everything else runs on the chip: parse it the way avr-gcc compiles it"
+          echo "If:"
+          echo "  PathExclude: {{.TEST_DIR}}/.*"
           echo "CompileFlags:"
           echo "  Add:"
           # --target=avr: clang's name for the AVR chip family
           # -xc: treat every file (including .h headers) as C, not C++
           # -nostdinc: don't use the Mac's headers, only avr-gcc's (added below)
-          for f in --target=avr -xc {{.CFLAGS_COMMON}} {{.OPT_RELEASE}} -nostdinc; do
+          # -I src: same include path as the build, so "common/pins.h" resolves
+          for f in --target=avr -xc {{.CFLAGS_COMMON}} {{.OPT_RELEASE}} -nostdinc -I"$(realpath {{.SRC_DIR}})"; do
             echo "    - $f"
           done
           # avr-gcc defines a few macros clang doesn't; avr-libc needs them
