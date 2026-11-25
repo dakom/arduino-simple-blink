@@ -8,17 +8,14 @@
 #ifndef SERIAL_H
 #define SERIAL_H
 
-#include <stdint.h>
-
 /**
  * @brief Set the speed and switch the transmitter on.
  *
  * Call once at startup, then enable interrupts with sei(), or nothing is sent.
  * Pin D1 belongs to the serial port from then on.
  *
- * @param baud_rate  Bits per second, e.g. 9600. Must match the receiving end.
  */
-void init_serial(uint16_t baud_rate);
+void init_serial();
 
 /**
  * @brief Queue a string to send, without its terminating '\0'.

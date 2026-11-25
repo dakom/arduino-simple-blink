@@ -81,4 +81,26 @@ void pin_set_flag(pin_id id, pin_flag flag);
  */
 pin_flag pin_get_flag(pin_id id);
 
+/**
+ * @brief Run an interrupt every time a pin's level changes, in either direction.
+ *
+ * The chip has one pin-change interrupt per port, shared by every pin on it, so define
+ * the ISR for the pin's port:
+ *
+ * | Pins       | Port | ISR                 |
+ * |------------|------|---------------------|
+ * | D8 - D13   | B    | `ISR(PCINT0_vect)`  |
+ * | A0 - A5    | C    | `ISR(PCINT1_vect)`  |
+ * | D0 - D7    | D    | `ISR(PCINT2_vect)`  |
+ *
+ * If two enabled pins share a port, the same ISR runs for both, and it can't tell which
+ * one changed: read each pin and compare with its last level.
+ *
+ * Takes effect once interrupts are enabled with sei(). Without an ISR for the port, the
+ * chip resets when the interrupt fires.
+ *
+ * @param id  The pin to watch.
+ */
+void pin_interrupt_enable(pin_id id);
+
 #endif /* PINS_H */

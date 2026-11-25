@@ -6,26 +6,36 @@ vars:
   NAME: simple-blink
   MCU: atmega328p           # the chip on the Arduino Uno
   F_CPU: 16000000UL         # Uno clock speed (16 MHz): the baud and timer math, and _delay_ms(), need it
-  BAUD: 9600                # serial speed for `task monitor`; must match baud_rate in src/main.c
+  BAUD_RATE: 9600           # serial speed: compiled into the firmware as BAUD_RATE, and used by `task monitor`
+  CALLBACKS_TIME_CAPACITY: 4  # most timed callbacks pending at once (1 to 255); each slot costs ~16 bytes of RAM
+  CALLBACKS_TIME_MAX_CAPACITY: 255  # the library's limit; `task test` also runs at this size
   FRONTEND_DIR: frontend
   MONITOR_PORT: 8765        # localhost port the browser serial monitor is served on
   SRC_DIR: src
   TEST_DIR: test
   BUILD_DIR: build
   # Compiler flags shared by the real build AND the editor (.clangd) — change them here only
+  # Strict warnings: -Wpedantic flags anything that isn't standard C23, -Wconversion flags
+  # silent narrowing (e.g. a uint16_t squeezed into a uint8_t), and -Wshadow flags a
+  # variable that hides another of the same name.
   CFLAGS_COMMON: >-
     -std=c23
     -mmcu={{.MCU}}
     -DF_CPU={{.F_CPU}}
-    -Wall -Wextra
+    -DBAUD_RATE={{.BAUD_RATE}}
+    -DCALLBACKS_TIME_CAPACITY={{.CALLBACKS_TIME_CAPACITY}}
+    -Wall -Wextra -Wpedantic -Wconversion -Wshadow
     -ffunction-sections -fdata-sections
   OPT_RELEASE: -Os          # smallest/fastest code
   OPT_DEBUG: -Og -g3        # easier to step through
   # Unit tests run on this Mac, not the chip, so they use the Mac's own clang.
   # The sanitizers stop the test with a report on out-of-bounds access, overflow, etc.
+  # The same strict warnings as the firmware build (see CFLAGS_COMMON).
+  # CALLBACKS_TIME_CAPACITY isn't here: test:run adds it, since the tests run at more than
+  # one capacity.
   HOST_CFLAGS: >-
     -std=c23
-    -Wall -Wextra
+    -Wall -Wextra -Wpedantic -Wconversion -Wshadow
     -g -fno-omit-frame-pointer
     -fsanitize=address,undefined
 
@@ -45,7 +55,14 @@ tasks:
       # release = smallest/fastest code, debug = easier to step through
       OPT: '{{if eq .MODE "debug"}}{{.OPT_DEBUG}}{{else}}{{.OPT_RELEASE}}{{end}}'
       OUT_DIR: '{{.BUILD_DIR}}/{{.MODE}}'
-      CFLAGS: '{{.CFLAGS_COMMON}} {{.OPT}}'
+      # -flto (link-time optimization): optimize the whole program at once instead of one
+      # .c file at a time, so small functions can be inlined across files. Smaller code,
+      # and cheaper ISRs: they needn't save extra registers for calls they can't see into.
+      CFLAGS: '{{.CFLAGS_COMMON}} {{.OPT}} -flto'
+      # --gc-sections: the linker drops every function and variable nothing uses. It works
+      # with -ffunction-sections -fdata-sections (in CFLAGS_COMMON), which put each one in
+      # its own section so it can be dropped on its own. LTO already removes most unused
+      # code from our files; this also catches what LTO can't see, such as library code.
       LDFLAGS: -Wl,--gc-sections
     sources:
       - '{{.SRC_DIR}}/**/*.c'
@@ -105,7 +122,7 @@ tasks:
     desc: Open the serial monitor in the browser (Chrome, Edge or Brave); Ctrl-C stops it
     interactive: true           # so Ctrl-C reaches the server
     vars:
-      URL: 'http://127.0.0.1:{{.MONITOR_PORT}}/?baud={{.BAUD}}'
+      URL: 'http://127.0.0.1:{{.MONITOR_PORT}}/?baud={{.BAUD_RATE}}'
     preconditions:
       - sh: '! lsof -nP -iTCP:{{.MONITOR_PORT}} -sTCP:LISTEN >/dev/null 2>&1'
         msg: 'Port {{.MONITOR_PORT}} is already in use (another monitor still running?). Pick another: task monitor MONITOR_PORT=8766'
@@ -131,27 +148,47 @@ tasks:
     cmds:
       - |
         port=$(scripts/find-uno-port.sh '{{.UNO_PORT}}') || exit 1
-        echo "Opening $port at {{.BAUD}} baud: quit with Ctrl-A, then K, then Y"
+        echo "Opening $port at {{.BAUD_RATE}} baud: quit with Ctrl-A, then K, then Y"
         echo "(Opening the port resets the Uno, so it starts again from the top.)"
         sleep 1
-        screen "$port" {{.BAUD}}
+        screen "$port" {{.BAUD_RATE}}
 
   test:
-    desc: Run the unit tests on this Mac (test/<name>_test.c is linked with <name>.c from anywhere in src/)
+    desc: Run the unit tests on this Mac (callbacks_time again at its maximum capacity)
     deps: [clangd]
     preconditions:
       - sh: ls {{.TEST_DIR}}/*_test.c >/dev/null 2>&1
         msg: 'No tests found — create {{.TEST_DIR}}/<name>_test.c first'
     cmds:
-      - mkdir -p {{.BUILD_DIR}}/test
+      # Every test, at the CALLBACKS_TIME_CAPACITY the firmware uses
+      - task: test:run
+        vars:
+          CAPACITY: '{{.CALLBACKS_TIME_CAPACITY}}'
+      # Then the callbacks tests again at the largest capacity the library allows: too big
+      # for the Uno's RAM, but it checks the library is right at its limit. (Skipped if the
+      # first run failed.)
+      - task: test:run
+        vars:
+          CAPACITY: '{{.CALLBACKS_TIME_MAX_CAPACITY}}'
+          TESTS: callbacks_time
+
+  test:run:
+    internal: true # only called by `test`, not listed in `task --list`
+    label: 'test:run-{{.CAPACITY}}-{{.TESTS}}'
+    vars:
+      TESTS: '{{.TESTS | default "*"}}' # which test/<name>_test.c to run: a name, or * for all
+      OUT_DIR: '{{.BUILD_DIR}}/test/capacity-{{.CAPACITY}}'
+    cmds:
+      - mkdir -p {{.OUT_DIR}}
+      - echo "Tests with CALLBACKS_TIME_CAPACITY={{.CAPACITY}}"
       # Each test is its own program: compile it with the matching file from src/ (in any
       # subfolder), run it, and carry on to the next one even if it fails, so you see
       # every result.
       - |
         failed=0
-        for test_file in {{.TEST_DIR}}/*_test.c; do
+        for test_file in {{.TEST_DIR}}/{{.TESTS}}_test.c; do
           name=$(basename "$test_file" _test.c)
-          exe={{.BUILD_DIR}}/test/${name}_test
+          exe={{.OUT_DIR}}/${name}_test
           echo "── $name"
           src_file=$(find {{.SRC_DIR}} -name "$name.c")
           if [ "$(echo "$src_file" | grep -c .)" -ne 1 ]; then
@@ -160,7 +197,15 @@ tasks:
             failed=$((failed + 1))
             continue
           fi
-          if xcrun clang {{.HOST_CFLAGS}} -I {{.SRC_DIR}} "$test_file" "$src_file" -o "$exe" && "$exe"; then
+          # Also link every helper that doesn't touch the hardware (no <avr/...> or
+          # <util/...> include), so code that uses other helpers can be tested too:
+          # callbacks_time.c needs handle_pool.c and time_heap.c, for example.
+          # -dead_strip: the linker drops code the test never reaches. Some of these helpers
+          # call hardware helpers (input_switch.c calls pins.c), which can't be linked on the
+          # Mac; that's fine as long as the test doesn't use them. If it does, linking fails.
+          helpers=$(grep -L -E '#include <(avr|util)/' {{.SRC_DIR}}/helpers/*.c | grep -v -x "$src_file")
+          if xcrun clang {{.HOST_CFLAGS}} -DCALLBACKS_TIME_CAPACITY={{.CAPACITY}} -I {{.SRC_DIR}} \
+               "$test_file" "$src_file" $helpers -Wl,-dead_strip -o "$exe" && "$exe"; then
             echo "   passed"
           else
             echo "   FAILED"
@@ -212,7 +257,7 @@ tasks:
           echo "  PathMatch: {{.TEST_DIR}}/.*"
           echo "CompileFlags:"
           echo "  Add:"
-          for f in -xc {{.HOST_CFLAGS}} -isysroot"$(xcrun --show-sdk-path)" -I"$(realpath {{.SRC_DIR}})"; do
+          for f in -xc {{.HOST_CFLAGS}} -DCALLBACKS_TIME_CAPACITY={{.CALLBACKS_TIME_CAPACITY}} -isysroot"$(xcrun --show-sdk-path)" -I"$(realpath {{.SRC_DIR}})"; do
             echo "    - $f"
           done
           echo "---"

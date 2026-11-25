@@ -11,14 +11,16 @@ constexpr uint16_t SERIAL_BUFFER_SIZE = 128;
 static ring_buffer_t serial_buffer = {.size = SERIAL_BUFFER_SIZE,
                                       .queue = (uint8_t[SERIAL_BUFFER_SIZE]){}};
 
-void init_serial(uint16_t baud_rate) {
+void init_serial() {
 
     // The baud rate register divides the clock: UBRR0 = F_CPU / (16 * baud) - 1.
     // The 16 is because the USART splits each bit into 16 time slices. Serial has
     // no clock wire, so the receiver times every bit from the start of each byte
     // and samples it in the middle, 8 slices in, the furthest from either edge.
     // The math is 32-bit: 16 * 9600 doesn't fit in a 16-bit int.
-    uint16_t register_rate = divide_round((uint32_t)F_CPU, (16 * (uint32_t)baud_rate)) - 1;
+    // The result (103 at 9600 baud) fits easily in the 16-bit register, hence the cast.
+    uint16_t register_rate =
+        (uint16_t)(divide_round((uint32_t)F_CPU, (16 * (uint32_t)BAUD_RATE)) - 1);
 
     // Set the USART Baud Rate Register 0 to our desired rate
     UBRR0 = register_rate;
@@ -48,7 +50,7 @@ ISR(USART_UDRE_vect) {
 
     if (!result.exists) {
         // no more data to send, so no need to interrupt
-        UCSR0B &= ~(1 << UDRIE0);
+        UCSR0B &= (uint8_t)~(1 << UDRIE0);
     } else {
         // Send the byte
         UDR0 = result.byte;

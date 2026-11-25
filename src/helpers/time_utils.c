@@ -32,8 +32,8 @@ void init_time() {
 millis_t time_now() {
     millis_t value;
 
-    // uint32_t is multiple bytes, we need to avoid a tear: the CPU reads it one
-    // byte at a time, and the ISR could change it between those reads.
+    // millis_t is 8 bytes, we need to avoid a tear: the CPU reads it one byte at a
+    // time, and the ISR could change it between those reads.
     ATOMIC_BLOCK(ATOMIC_RESTORESTATE) {
         value = ms_since_start;
     }
@@ -41,7 +41,8 @@ millis_t time_now() {
     return value;
 }
 
-// Install the ISR for the timer: runs once per millisecond.
+// Install the ISR for the timer: runs once per millisecond. A 64-bit increment takes about
+// 50 cycles here, out of the 16,000 the CPU runs each millisecond.
 ISR(TIMER0_COMPA_vect) {
     ms_since_start++;
 }

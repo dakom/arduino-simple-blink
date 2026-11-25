@@ -6,20 +6,27 @@ and no Arduino libraries. It's a small learning project that runs both on a real
 
 While the switch is on, the LED blinks every 250 ms. Each time the switch changes, the board says
 so over serial (`Starting blink!` / `Stopping blink!`), which you can watch in the browser with
-`task monitor`.
+`task monitor`. The switch is debounced: a change only counts once the pin has been steady for
+20 ms.
 
 ## How it works
 
 | Part | How |
 | --- | --- |
 | Pins | `helpers/pins` maps board labels (D0–D13, A0–A5) to the DDRx / PORTx / PINx registers |
-| Time | Hardware Timer0 interrupts once per millisecond (16 MHz ÷ 64 ÷ 250) and counts up; `time_now()` reads the count atomically |
-| Blink | `blink.c` never waits: each time round the main loop it checks how long ago the LED last changed |
+| Time | Hardware Timer0 interrupts once per millisecond (16 MHz ÷ 64 ÷ 250) and counts up; `time_now()` reads the count atomically. The count is 64-bit, so it never wraps |
+| Main loop | Reads the time once per pass and hands it to everything: due callbacks, then buttons, then lights |
+| Blink | `lights.c` is a chain of timed callbacks: each toggle flips the LED and schedules the next one 250 ms after the last deadline, so the rhythm doesn't drift. Stopping cancels the pending toggle |
+| Buttons | `input_switch` debounces a switch on any pin: a pin-change interrupt counts every change in its level (ignoring other pins that share the interrupt), and each change cancels the pending 20 ms timer and starts a fresh one, so the switch only changes state after 20 ms without changes. `buttons.c` keeps a table of them, one per `button_id_t`; the light switch on D9 is the only one so far |
+| Timed callbacks | `callbacks_time` runs a function once at a set time, handing it a context pointer given when it was scheduled (so one function can serve many LEDs or buttons). One shared queue: a handle pool hands out slots, and a heap keeps them in deadline order |
+| Handles | `handle_pool` gives each callback a handle that goes stale once the callback runs or is cancelled, so an old handle can never cancel a newer callback that reused its slot |
 | Serial | `serial_write_string()` queues text in a 128-byte ring buffer and returns at once; the "data register empty" interrupt sends it a byte at a time at 9600 baud |
 | Ring buffer | When full, it overwrites the oldest unsent bytes. It's plain C, so it's unit tested on the Mac |
 
-Code shared between the main loop and an interrupt is protected with `ATOMIC_BLOCK`, so an
-interrupt can never see, or cause, a half-finished update.
+Values shared between the main loop and an interrupt are `volatile`, so every read really
+reads memory. Multi-byte ones (the clock, the serial queue) are also read or written inside
+`ATOMIC_BLOCK` in the main loop, so an interrupt can never see, or cause, a half-finished update.
+Single bytes, like the switch's edge count, can't be half-written, so `volatile` is enough.
 
 ## Circuit
 
@@ -73,7 +80,27 @@ export PATH="$(brew --prefix avr-gcc@16)/bin:$PATH"  # avr-gcc@16 is keg-only
 
 Unit tests run on the Mac, not the chip, so they can only test code that doesn't touch the
 hardware registers. Each `test/<name>_test.c` is a small program with its own `main()`, linked
-with the `<name>.c` found anywhere under `src/`.
+with the `<name>.c` found anywhere under `src/`, plus every file in `src/helpers/` that doesn't
+include `<avr/...>` or `<util/...>` (so `callbacks_time` can use `handle_pool` and `time_heap`).
+The linker drops whatever a test doesn't use, so a helper that calls hardware code (like
+`input_switch`, which calls `pins`) can sit in that list as long as no test uses it.
+`task test` runs them all at the firmware's `CALLBACKS_TIME_CAPACITY`, then the callbacks tests
+again at the library's maximum of 255.
+
+### Configuration
+
+| Where | What | Examples |
+| --- | --- | --- |
+| `src/config.h` | Choices for this app: which pins, how fast, how long | `PIN_LED`, `BLINK_SPEED`, `BUTTON_SWITCH_DEBOUNCE_THRESHOLD_MS` |
+| `Taskfile.yml` | Settings that tools, system headers or `src/helpers/` also need, passed to the compiler as `-D...` | `F_CPU`, `BAUD_RATE`, `CALLBACKS_TIME_CAPACITY` |
+
+`src/helpers/` never includes `config.h`, so it stays reusable in other projects. Taskfile
+settings can be overridden per run, e.g. `task build CALLBACKS_TIME_CAPACITY=8`.
+
+To add a button: give it a `BUTTON_ID_...` in `src/buttons.h`, an entry in the table at the top
+of `src/buttons.c`, and, if it's not on D8–D13, an interrupt for its port (see the comment on
+the ISR there). Read it anywhere with `button_is_pressed(BUTTON_ID_...)`. Each button pending
+a change takes a `CALLBACKS_TIME_CAPACITY` slot, so raise that too if you add several.
 
 ### On a real board
 
@@ -118,11 +145,17 @@ restart the simulation.
 | Path | Contents |
 | --- | --- |
 | `src/main.c` | Sets everything up, then runs the main loop |
-| `src/blink.c` | Non-blocking blink, driven by the millisecond clock |
-| `src/helpers/pins.*` | Digital I/O over the DDRx / PORTx / PINx registers |
+| `src/config.h` | App settings: pins and timings |
+| `src/lights.*` | Non-blocking blink, driven by timed callbacks |
+| `src/buttons.*` | The app's buttons: a table of `input_switch`es by `button_id_t`, and their interrupt |
+| `src/helpers/pins.*` | Digital I/O over the DDRx / PORTx / PINx registers, and pin-change interrupts |
 | `src/helpers/serial.*` | Interrupt-driven serial output |
 | `src/helpers/ring_buffer.*` | Fixed-size byte queue used by serial |
 | `src/helpers/time_utils.*` | Millisecond clock from Timer0 |
+| `src/helpers/input_switch.*` | Debounced switch on any pin, with or without the internal pull-up |
+| `src/helpers/callbacks_time.*` | One shared queue of timed callbacks |
+| `src/helpers/handle_pool.*` | Handles that go stale when their slot is freed or reused |
+| `src/helpers/time_heap.*` | Ids ordered by deadline, with removal and rescheduling |
 | `src/helpers/math_utils.*` | Integer rounding division |
 | `test/` | Unit tests that run on the Mac |
 | `frontend/` | Browser serial monitor (WebSerial), served by `task monitor` |
