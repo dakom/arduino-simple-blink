@@ -14,20 +14,28 @@
 #include <avr/interrupt.h>
 
 int main(void) {
-    init_buttons();
-    init_lights();
+    // Library init
     init_timer();
     init_uart();
     init_callbacks_time();
+
+    // Application init
+    init_buttons();
+    init_lights();
 
     // Interrupts are off after every reset. Turn them on only once everything
     // they use is set up.
     sei();
 
+    // Handle the case where we start off with the button pressed
+    // after this, it's all callback-driven
+    if (button_get(BUTTON_ID_LIGHT_SWITCH)->state.pressed) {
+        lights_update(true, timer_now());
+    }
+
     while (true) {
         millis_t now = timer_now();
         callbacks_time_execute(now);
-        buttons_update(now);
-        lights_update(button_is_pressed(BUTTON_ID_LIGHT_SWITCH), now);
+        buttons_debounce(now);
     }
 }

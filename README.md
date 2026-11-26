@@ -18,8 +18,8 @@ so over serial (`Starting blink!` / `Stopping blink!`), which you can watch in t
 | Main loop | Reads the time once per pass and hands it to everything: due callbacks, then buttons, then lights |
 | Blink | `lights.c` is a chain of timed callbacks: each toggle flips the LED and schedules the next one 250 ms after the last deadline, so the rhythm doesn't drift. Stopping cancels the pending toggle |
 | Buttons | `lib/input/switch` debounces a switch on any pin: a pin-change interrupt counts every change in its level (ignoring other pins that share the interrupt), and each change cancels the pending 20 ms timer and starts a fresh one, so the switch only changes state after 20 ms without changes. `buttons.c` keeps a table of them, one per `button_id_t`; the light switch on D9 is the only one so far |
-| Timed callbacks | `lib/callbacks/time` runs a function once at a set time, handing it a context pointer given when it was scheduled (so one function can serve many LEDs or buttons). One shared queue: a handle pool hands out slots, and a heap keeps them in deadline order |
-| Handles | `lib/collections/handle` gives each callback a handle that goes stale once the callback runs or is cancelled, so an old handle can never cancel a newer callback that reused its slot |
+| Timed callbacks | `lib/callbacks/time` runs a function once at a set time, handing it the context stored with it (so one function can serve many LEDs or buttons) and the current time. Each callback is a `timed_callback_t` its owner keeps (the blink has one, each switch has one), and the pending ones are linked in deadline order through those structs, so there's no capacity to set and no "queue full". Scheduling is O(1) when the new deadline is the latest (the usual case), cancelling is always O(1) |
+| Events | `lib/callbacks/event` calls every `listener_t` subscribed to an `event_t`, such as a switch's `on_press`. Like timed callbacks, listeners and events are structs their owners keep, linked together, so any number can subscribe |
 | Serial | `uart_write_string()` (`lib/hardware/uart`) queues text in a 128-byte ring buffer and returns at once; the "data register empty" interrupt sends it a byte at a time at 9600 baud |
 | Ring buffer | When full, it overwrites the oldest unsent bytes. It's plain C, so it's unit tested on the Mac |
 
@@ -72,7 +72,7 @@ export PATH="$(brew --prefix avr-gcc@16)/bin:$PATH"  # avr-gcc@16 is keg-only
 | `task dev`        | Rebuild whenever a source file changes                |
 | `task test`       | Run the unit tests in `test/` on your Mac             |
 | `task test:watch` | Re-run the unit tests whenever a source file changes  |
-| `task test -- slotmap` | Run only the tests whose path contains `slotmap` (works with `test:watch` too) |
+| `task test -- ring_buffer` | Run only the tests whose path contains `ring_buffer` (works with `test:watch` too) |
 | `task flash`      | Build and upload to an Uno over USB                   |
 | `task monitor`    | Serial monitor in the browser (Chrome, Edge or Brave) |
 | `task monitor:terminal` | Serial monitor in the terminal (quit: Ctrl-A, K, Y) |
@@ -83,19 +83,14 @@ Unit tests run on the Mac, not the chip, so they can only test code that doesn't
 hardware registers. Each test sits at the same path as the code it tests:
 `test/lib/callbacks/time_test.c` tests `src/lib/callbacks/time.c`. Each is a small program with
 its own `main()`, linked with its source file plus every file in `src/lib/` that doesn't include
-`<avr/...>` or `<util/...>` (so `callbacks/time` can use `collections/handle` and
-`collections/time_heap`). The linker drops whatever a test doesn't use, so a file that calls
+`<avr/...>` or `<util/...>` (so a test of one `lib/` file can use the others). The linker drops whatever a test doesn't use, so a file that calls
 hardware code (like `input/switch`, which calls `hardware/gpio`) can sit in that list as long as
 no test uses it. Code shared between tests goes in `test/test_helpers/`, included by its path from
 `test/` (`#include "test_helpers/assert.h"`); any `.c` files there are available to every test.
-Tests are compiled with the firmware's `CALLBACKS_TIME_CAPACITY`. A test that needs another value
-compiles its own copy of the code instead: `test/lib/callbacks/time_max_capacity_test.c` sets the
-capacity to the library's maximum of 255, includes `src/lib/callbacks/time.c`, and then runs every
-test in `time_test.c` again.
 
-To run only some tests, put part of their path after `--`: `task test -- slotmap` runs
-`test/lib/collections/slotmap_test.c`, and `task test -- collections` runs every test in that
-folder. The same works with `task test:watch -- slotmap`, which re-runs them whenever anything in
+To run only some tests, put part of their path after `--`: `task test -- ring_buffer` runs
+`test/lib/collections/ring_buffer_test.c`, and `task test -- collections` runs every test in that
+folder. The same works with `task test:watch -- ring_buffer`, which re-runs them whenever anything in
 `src/` or `test/` changes.
 
 ### Configuration
@@ -103,15 +98,17 @@ folder. The same works with `task test:watch -- slotmap`, which re-runs them whe
 | Where | What | Examples |
 | --- | --- | --- |
 | `src/config.h` | Choices for this app: which pins, how fast, how long | `PIN_LED`, `BLINK_SPEED`, `BUTTON_SWITCH_DEBOUNCE_THRESHOLD_MS` |
-| `Taskfile.yml` | Settings that tools, system headers or `src/lib/` also need, passed to the compiler as `-D...` | `F_CPU`, `BAUD_RATE`, `CALLBACKS_TIME_CAPACITY` |
+| `Taskfile.yml` | Settings that tools, system headers or `src/lib/` also need, passed to the compiler as `-D...` | `F_CPU`, `BAUD_RATE` |
 
 `src/lib/` never includes `config.h`, so it stays reusable in other projects. Taskfile
-settings can be overridden per run, e.g. `task build CALLBACKS_TIME_CAPACITY=8`.
+settings can be overridden per run, e.g. `task build BAUD_RATE=115200`.
 
 To add a button: give it a `BUTTON_ID_...` in `src/buttons.h`, an entry in the table at the top
 of `src/buttons.c`, and, if it's not on D8–D13, an interrupt for its port (see the comment on
-the ISR there). Read it anywhere with `button_is_pressed(BUTTON_ID_...)`. Each button pending
-a change takes a `CALLBACKS_TIME_CAPACITY` slot, so raise that too if you add several.
+the ISR there). Each switch has its own `on_press` and `on_release` events: subscribe a
+`listener_t` to `button_get(BUTTON_ID_...)->on_press` (see `init_buttons` in `src/buttons.c`),
+and read its current level with `button_get(BUTTON_ID_...)->state.pressed`. Each switch brings
+its own debounce timer, so there's nothing to resize.
 
 ### On a real board
 
@@ -164,10 +161,10 @@ restart the simulation.
 | `src/lib/hardware/uart.*` | Interrupt-driven serial output |
 | `src/lib/hardware/timer.*` | Millisecond clock from Timer0 |
 | `src/lib/input/switch.*` | Debounced switch on any pin, with or without the internal pull-up |
-| `src/lib/callbacks/time.*` | One shared queue of timed callbacks |
+| `src/lib/callbacks/time.*` | Timed callbacks: one queue, in deadline order, of structs their owners keep |
+| `src/lib/callbacks/event.*` | Events with any number of subscribed listeners |
+| `src/lib/callbacks/shared.h` | The `callback_t` function type both use |
 | `src/lib/collections/ring_buffer.*` | Fixed-size byte queue used by the UART |
-| `src/lib/collections/handle.*` | Handles that go stale when their slot is freed or reused |
-| `src/lib/collections/time_heap.*` | Ids ordered by deadline, with removal and rescheduling |
 | `src/lib/math/utils.*` | Integer rounding division |
 | `test/` | Unit tests that run on the Mac, at the same paths as the code they test |
 | `frontend/` | Browser serial monitor (WebSerial), served by `task monitor` |

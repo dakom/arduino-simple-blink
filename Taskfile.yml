@@ -7,7 +7,6 @@ vars:
   MCU: atmega328p           # the chip on the Arduino Uno
   F_CPU: 16000000UL         # Uno clock speed (16 MHz): the baud and timer math, and _delay_ms(), need it
   BAUD_RATE: 9600           # serial speed: compiled into the firmware as BAUD_RATE, and used by `task monitor`
-  CALLBACKS_TIME_CAPACITY: 4  # most timed callbacks pending at once (1 to 255); each slot costs ~16 bytes of RAM
   FRONTEND_DIR: frontend
   MONITOR_PORT: 8765        # localhost port the browser serial monitor is served on
   SRC_DIR: src
@@ -22,7 +21,6 @@ vars:
     -mmcu={{.MCU}}
     -DF_CPU={{.F_CPU}}
     -DBAUD_RATE={{.BAUD_RATE}}
-    -DCALLBACKS_TIME_CAPACITY={{.CALLBACKS_TIME_CAPACITY}}
     -Wall -Wextra -Wpedantic -Wconversion -Wshadow
     -ffunction-sections -fdata-sections
   OPT_RELEASE: -Os          # smallest/fastest code
@@ -30,8 +28,6 @@ vars:
   # Unit tests run on this Mac, not the chip, so they use the Mac's own clang.
   # The sanitizers stop the test with a report on out-of-bounds access, overflow, etc.
   # The same strict warnings as the firmware build (see CFLAGS_COMMON).
-  # CALLBACKS_TIME_CAPACITY isn't here: `test` adds it (the firmware's value). A test that
-  # needs another value compiles its own copy of the code (see time_max_capacity_test.c).
   HOST_CFLAGS: >-
     -std=c23
     -Wall -Wextra -Wpedantic -Wconversion -Wshadow
@@ -153,21 +149,20 @@ tasks:
         screen "$port" {{.BAUD_RATE}}
 
   test:
-    desc: Run the unit tests on this Mac (`task test -- slotmap` runs only tests whose path contains "slotmap")
+    desc: Run the unit tests on this Mac (`task test -- ring_buffer` runs only tests whose path contains "ring_buffer")
     deps: [clangd]
     preconditions:
       - sh: '[ -n "$(find {{.TEST_DIR}} -name "*_test.c")" ]'
         msg: 'No tests found — create {{.TEST_DIR}}/<path>_test.c first (e.g. {{.TEST_DIR}}/lib/math/utils_test.c)'
     vars:
-      # Anything after `--` picks which tests run: `task test -- slotmap` runs every test
-      # whose path contains "slotmap". With nothing after `--`, every test runs.
+      # Anything after `--` picks which tests run: `task test -- ring_buffer` runs every test
+      # whose path contains "ring_buffer". With nothing after `--`, every test runs.
       FILTER: '{{.CLI_ARGS}}'
       OUT_DIR: '{{.BUILD_DIR}}/test'
     cmds:
       # Each test is its own program, usually testing the file at the same path under src/
       # (test/lib/callbacks/time_test.c tests src/lib/callbacks/time.c). Every test runs,
       # even after one fails, so you see every result, then a summary names the failures.
-      # Tests are compiled with the firmware's CALLBACKS_TIME_CAPACITY.
       - |
         # Colours only when printing to a terminal, so logs and pipes get plain text
         if [ -t 1 ]; then
@@ -192,7 +187,7 @@ tasks:
         # against. It holds every src/lib/ file that doesn't touch the hardware (no <avr/...>
         # or <util/...> include), plus any .c files in test/test_helpers/. From an archive,
         # the linker only takes the files a test actually uses: callbacks/time_test pulls in
-        # callbacks/time.c, which pulls in collections/handle.c and collections/time_heap.c.
+        # callbacks/time.c, and nothing it doesn't use.
         # So a file that calls hardware code (input/switch.c calls hardware/gpio.c) can sit
         # in the archive harmlessly, as long as no test uses it. Compiling each file once
         # also means each warning is printed once, not once per test.
@@ -200,7 +195,7 @@ tasks:
         objs=""
         for f in $lib_files; do
           obj="$out_dir/obj/$(echo "${f%.c}" | tr / _).o"
-          xcrun clang {{.HOST_CFLAGS}} -DCALLBACKS_TIME_CAPACITY={{.CALLBACKS_TIME_CAPACITY}} -I {{.SRC_DIR}} -I {{.TEST_DIR}} \
+          xcrun clang {{.HOST_CFLAGS}} -I {{.SRC_DIR}} -I {{.TEST_DIR}} \
             -c "$f" -o "$obj" || { echo "${red}Couldn't compile $f, so no tests ran${plain}"; exit 1; }
           objs="$objs $obj"
         done
@@ -216,7 +211,7 @@ tasks:
           echo "── $name"
           # -dead_strip: the linker also drops any code the test never reaches. A test whose
           # source file was renamed or deleted fails here, with "Undefined symbols".
-          if result=$(xcrun clang {{.HOST_CFLAGS}} -DCALLBACKS_TIME_CAPACITY={{.CALLBACKS_TIME_CAPACITY}} \
+          if result=$(xcrun clang {{.HOST_CFLAGS}} \
                           -I {{.SRC_DIR}} -I {{.TEST_DIR}} "$test_file" "$out_dir/libtest.a" \
                           -Wl,-dead_strip -o "$exe" 2>&1); then
             [ -n "$result" ] && echo "$result" | sed 's/^/   /' # compiler warnings, if any
@@ -253,7 +248,7 @@ tasks:
         echo "${green}All $total passed${plain}"
 
   test:watch:
-    desc: Re-run the unit tests whenever src/ or test/ changes (`task test:watch -- slotmap` for some) (needs watchexec)
+    desc: Re-run the unit tests whenever src/ or test/ changes (`task test:watch -- ring_buffer` for some) (needs watchexec)
     preconditions:
       - sh: command -v watchexec
         msg: 'watchexec not found — install it with: brew install watchexec'
@@ -312,7 +307,7 @@ tasks:
           echo "  PathMatch: {{.TEST_DIR}}/.*"
           echo "CompileFlags:"
           echo "  Add:"
-          for f in -xc {{.HOST_CFLAGS}} -DCALLBACKS_TIME_CAPACITY={{.CALLBACKS_TIME_CAPACITY}} -isysroot"$(xcrun --show-sdk-path)" -I"$(realpath {{.SRC_DIR}})" -I"$(realpath {{.TEST_DIR}})"; do
+          for f in -xc {{.HOST_CFLAGS}} -isysroot"$(xcrun --show-sdk-path)" -I"$(realpath {{.SRC_DIR}})" -I"$(realpath {{.TEST_DIR}})"; do
             echo "    - $f"
           done
           echo "---"

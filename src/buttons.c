@@ -1,6 +1,9 @@
 #include "buttons.h"
 #include "config.h"
 #include "lib/all.h"
+#include "lib/callbacks/event.h"
+#include "lib/input/switch.h"
+#include "lights.h"
 #include <avr/interrupt.h>
 #include <stddef.h>
 
@@ -16,7 +19,6 @@ static input_switch_t buttons[] = {
         {
             .pin = PIN_SWITCH,
             .pull_up = true,
-            .state = {.callback_handle = HANDLE_NONE},
         },
 };
 
@@ -24,20 +26,35 @@ static input_switch_t buttons[] = {
 static_assert(sizeof buttons / sizeof buttons[0] == BUTTON_ID_COUNT,
               "buttons[] needs exactly one entry per button_id_t (see buttons.h)");
 
+static void on_light_button_press([[maybe_unused]] void *context, [[maybe_unused]] void *event_data) {
+    lights_update(true, timer_now());
+}
+
+static void on_light_button_release([[maybe_unused]] void *context, [[maybe_unused]] void *event_data) {
+    lights_update(false, timer_now());
+}
+
+// Listeners are static, since each event keeps their addresses
+static listener_t light_press_listener = {.fn = on_light_button_press};
+static listener_t light_release_listener = {.fn = on_light_button_release};
+
 void init_buttons() {
     for (size_t i = 0; i < BUTTON_ID_COUNT; i++) {
         init_input_switch(&buttons[i]);
     }
+
+    event_subscribe(&buttons[BUTTON_ID_LIGHT_SWITCH].on_press, &light_press_listener);
+    event_subscribe(&buttons[BUTTON_ID_LIGHT_SWITCH].on_release, &light_release_listener);
 }
 
-void buttons_update(millis_t now) {
+void buttons_debounce(millis_t now) {
     for (size_t i = 0; i < BUTTON_ID_COUNT; i++) {
-        input_switch_update(&buttons[i], now, BUTTON_SWITCH_DEBOUNCE_THRESHOLD_MS);
+        input_switch_debounce(&buttons[i], now, BUTTON_SWITCH_DEBOUNCE_THRESHOLD_MS);
     }
 }
 
-bool button_is_pressed(button_id_t button_id) {
-    return buttons[button_id].state.pressed;
+input_switch_t *button_get(button_id_t button_id) {
+    return &buttons[button_id];
 }
 
 // The pin-change interrupt for port B (PCINT0_vect): pins D8-D13, where the light switch

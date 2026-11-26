@@ -7,8 +7,7 @@
  * contacts bouncing for a millisecond or two after a press can't register as several
  * presses. Each switch is one input_switch_t, which you define and wire up:
  *
- *     static input_switch_t door = {.pin = GPIO_PIN_DIGITAL_9, .pull_up = true,
- *                                   .state = {.callback_handle = HANDLE_NONE}};
+ *     static input_switch_t door = {.pin = GPIO_PIN_DIGITAL_9, .pull_up = true};
  *
  *     init_input_switch(&door);                    // at startup, before sei()
  *
@@ -16,9 +15,12 @@
  *         input_switch_handle_interrupt(&door);    // (see gpio_interrupt_enable in gpio.h)
  *     }
  *
+ *     static listener_t door_opened = {.fn = on_door_opened};
+ *     event_subscribe(&door.on_release, &door_opened); // on_door_opened(context, &door)
+ *
  *     // in main's loop, once per pass, along with callbacks_time_execute(now):
- *     input_switch_update(&door, now, 20);
- *     if (door.state.pressed) { ... }
+ *     input_switch_debounce(&door, now, 20);
+ *     if (door.state.pressed) { ... }                  // or just read the level
  *
  * Several switches on the same port share one ISR: call input_switch_handle_interrupt for
  * each of them there. Each one only counts changes of its own pin.
@@ -26,20 +28,21 @@
  * Rules:
  * - The input_switch_t must be static or global: the callback queue keeps its address
  *   while a change is settling.
- * - Uses one callbacks_time slot per switch, only while a change is settling.
+ * - Each switch carries its own timed callback (state.settle), so there's nothing to size.
  * - input_switch_handle_interrupt is the only function here that may be called from an
  *   interrupt; the others are main loop only.
  */
 
-#include "lib/collections/handle.h"
+#include "lib/callbacks/event.h"
+#include "lib/callbacks/time.h"
 #include "lib/hardware/gpio.h"
 #include "lib/hardware/timer.h"
 
 /** @brief What the main loop knows about a switch. Only touched outside interrupts. */
 typedef struct input_switch_state_t {
     bool pressed;             ///< The debounced level: what the rest of the program sees.
-    uint8_t edges;            ///< raw.edges as of the last input_switch_update, to spot new ones.
-    handle_t callback_handle; ///< The pending settle callback, to cancel on a new change.
+    uint8_t edges;            ///< raw.edges as of the last input_switch_debounce, to spot new ones.
+    timed_callback_t settle;  ///< Accepts a change once it's been steady for the debounce time.
 } input_switch_state_t;
 
 /**
@@ -55,10 +58,10 @@ typedef struct input_switch_state_raw_t {
 /**
  * @brief One switch: where it is, how it's wired, and its state.
  *
- * Set pin and pull_up, and state.callback_handle to HANDLE_NONE; leave the rest zero.
+ * Set pin and pull_up and leave the rest zero: init_input_switch sets up the rest.
  * Both halves of the state live here, so a pointer to the whole switch is all its settle
- * callback needs. Only raw is volatile, so the main loop's reads of state (the 4-byte
- * handle, say) stay ordinary reads.
+ * callback needs. Only raw is volatile, so the main loop's reads of state stay ordinary
+ * reads.
  */
 typedef struct input_switch_t {
     gpio_pin_t pin; ///< The pin the switch is on.
@@ -66,6 +69,8 @@ typedef struct input_switch_t {
     /// GND, so "pressed" reads LOW. false: no internal pull-up; there must be an external
     /// pull-down resistor, and the switch connects the pin to 5 V, so "pressed" reads HIGH.
     bool pull_up;
+    event_t on_press;   ///< Executed once a press has settled, with the input_switch_t as data.
+    event_t on_release; ///< Executed once a release has settled, with the input_switch_t as data.
     input_switch_state_t state;            ///< Main loop only.
     volatile input_switch_state_raw_t raw; ///< Written by the interrupt.
 } input_switch_t;
@@ -87,7 +92,7 @@ void init_input_switch(input_switch_t *input_switch);
  * @param now       The current time, from timer_now().
  * @param debounce  How long the pin must stay steady before a change counts, in ms.
  */
-void input_switch_update(input_switch_t *input_switch, millis_t now, millis_t debounce);
+void input_switch_debounce(input_switch_t *input_switch, millis_t now, millis_t debounce);
 
 /**
  * @brief Record a change of the pin's level. Call from the ISR for the pin's port.

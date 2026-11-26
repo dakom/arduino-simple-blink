@@ -19,7 +19,7 @@ void init_lights();
  * Only acts when active changes, and says so over serial. Starting turns the LED on
  * straight away and schedules a toggle every BLINK_SPEED (in config.h) through
  * callbacks_time; stopping cancels it and turns the LED off. So the blink needs
- * callbacks_time_execute() in the main loop too, and one free callbacks_time slot.
+ * callbacks_time_execute() in the main loop too.
  *
  * @param active  Whether the LED should be blinking.
  * @param now     The current time, from timer_now().
