@@ -8,7 +8,6 @@ vars:
   F_CPU: 16000000UL         # Uno clock speed (16 MHz): the baud and timer math, and _delay_ms(), need it
   BAUD_RATE: 9600           # serial speed: compiled into the firmware as BAUD_RATE, and used by `task monitor`
   CALLBACKS_TIME_CAPACITY: 4  # most timed callbacks pending at once (1 to 255); each slot costs ~16 bytes of RAM
-  CALLBACKS_TIME_MAX_CAPACITY: 255  # the library's limit; `task test` also runs at this size
   FRONTEND_DIR: frontend
   MONITOR_PORT: 8765        # localhost port the browser serial monitor is served on
   SRC_DIR: src
@@ -31,8 +30,8 @@ vars:
   # Unit tests run on this Mac, not the chip, so they use the Mac's own clang.
   # The sanitizers stop the test with a report on out-of-bounds access, overflow, etc.
   # The same strict warnings as the firmware build (see CFLAGS_COMMON).
-  # CALLBACKS_TIME_CAPACITY isn't here: test:run adds it, since the tests run at more than
-  # one capacity.
+  # CALLBACKS_TIME_CAPACITY isn't here: `test` adds it (the firmware's value). A test that
+  # needs another value compiles its own copy of the code (see time_max_capacity_test.c).
   HOST_CFLAGS: >-
     -std=c23
     -Wall -Wextra -Wpedantic -Wconversion -Wshadow
@@ -154,81 +153,107 @@ tasks:
         screen "$port" {{.BAUD_RATE}}
 
   test:
-    desc: Run the unit tests on this Mac (lib/callbacks/time again at its maximum capacity)
+    desc: Run the unit tests on this Mac (`task test -- slotmap` runs only tests whose path contains "slotmap")
     deps: [clangd]
     preconditions:
       - sh: '[ -n "$(find {{.TEST_DIR}} -name "*_test.c")" ]'
         msg: 'No tests found — create {{.TEST_DIR}}/<path>_test.c first (e.g. {{.TEST_DIR}}/lib/math/utils_test.c)'
-    cmds:
-      # Every test, at the CALLBACKS_TIME_CAPACITY the firmware uses
-      - task: test:run
-        vars:
-          CAPACITY: '{{.CALLBACKS_TIME_CAPACITY}}'
-      # Then the callbacks tests again at the largest capacity the library allows: too big
-      # for the Uno's RAM, but it checks the library is right at its limit. (Skipped if the
-      # first run failed.)
-      - task: test:run
-        vars:
-          CAPACITY: '{{.CALLBACKS_TIME_MAX_CAPACITY}}'
-          TESTS: lib/callbacks/time
-
-  test:run:
-    internal: true # only called by `test`, not listed in `task --list`
-    label: 'test:run-{{.CAPACITY}}-{{.TESTS}}'
     vars:
-      # Which test to run, by its path under test/ without _test.c (e.g. lib/callbacks/time).
-      # Empty runs them all.
-      TESTS: '{{.TESTS | default ""}}'
-      OUT_DIR: '{{.BUILD_DIR}}/test/capacity-{{.CAPACITY}}'
+      # Anything after `--` picks which tests run: `task test -- slotmap` runs every test
+      # whose path contains "slotmap". With nothing after `--`, every test runs.
+      FILTER: '{{.CLI_ARGS}}'
+      OUT_DIR: '{{.BUILD_DIR}}/test'
     cmds:
-      - mkdir -p {{.OUT_DIR}}
-      - echo "Tests with CALLBACKS_TIME_CAPACITY={{.CAPACITY}}"
-      # Each test is its own program. test/<path>_test.c tests src/<path>.c (so
-      # test/lib/callbacks/time_test.c tests src/lib/callbacks/time.c): compile the two
-      # together, run it, and carry on to the next one even if it fails, so you see every
-      # result.
+      # Each test is its own program, usually testing the file at the same path under src/
+      # (test/lib/callbacks/time_test.c tests src/lib/callbacks/time.c). Every test runs,
+      # even after one fails, so you see every result, then a summary names the failures.
+      # Tests are compiled with the firmware's CALLBACKS_TIME_CAPACITY.
       - |
-        failed=0
-        if [ -n "{{.TESTS}}" ]; then
-          test_files="{{.TEST_DIR}}/{{.TESTS}}_test.c"
+        # Colours only when printing to a terminal, so logs and pipes get plain text
+        if [ -t 1 ]; then
+          red=$(printf '\033[1;31m'); green=$(printf '\033[32m'); dim=$(printf '\033[2m'); plain=$(printf '\033[0m')
         else
-          test_files=$(find {{.TEST_DIR}} -name '*_test.c' | sort)
+          red=""; green=""; dim=""; plain=""
         fi
-        for test_file in $test_files; do
-          name=${test_file#{{.TEST_DIR}}/}
-          name=${name%_test.c}
-          exe={{.OUT_DIR}}/$(echo "$name" | tr / _)_test
-          echo "── $name"
-          src_file={{.SRC_DIR}}/$name.c
-          if [ ! -f "$src_file" ]; then
-            echo "   $test_file has no matching $src_file"
-            echo "   FAILED"
-            failed=$((failed + 1))
-            continue
-          fi
-          # Also link every lib/ file that doesn't touch the hardware (no <avr/...> or
-          # <util/...> include), so code that uses other lib/ code can be tested too:
-          # callbacks/time.c needs collections/handle.c and collections/time_heap.c, for
-          # example. -dead_strip: the linker drops code the test never reaches. Some of these
-          # files call hardware code (input/switch.c calls hardware/gpio.c), which can't be
-          # linked on the Mac; that's fine as long as the test doesn't use them. If it does,
-          # linking fails.
-          libs=$(find {{.SRC_DIR}}/lib -name '*.c' | sort | xargs grep -L -E '#include <(avr|util)/' | grep -v -x "$src_file")
-          if xcrun clang {{.HOST_CFLAGS}} -DCALLBACKS_TIME_CAPACITY={{.CAPACITY}} -I {{.SRC_DIR}} \
-               "$test_file" "$src_file" $libs -Wl,-dead_strip -o "$exe" && "$exe"; then
-            echo "   passed"
-          else
-            echo "   FAILED"
-            failed=$((failed + 1))
-          fi
-        done
-        if [ "$failed" -ne 0 ]; then
-          echo "$failed test file(s) failed"
+
+        # Pick the tests first, so there's nothing to compile if none match.
+        # (`|| true`: grep finding nothing isn't an error here; it's handled just below.)
+        test_files=$(find {{.TEST_DIR}} -name '*_test.c' | sort | grep -F -- "{{.FILTER}}" || true)
+        if [ -z "$test_files" ]; then
+          echo "${red}No test's path contains \"{{.FILTER}}\". The tests are:${plain}"
+          find {{.TEST_DIR}} -name '*_test.c' | sort | sed 's/^/  /'
           exit 1
         fi
 
+        out_dir={{.OUT_DIR}}
+        rm -rf "$out_dir" && mkdir -p "$out_dir/obj"
+
+        # First compile the library once, into one archive (libtest.a) that every test links
+        # against. It holds every src/lib/ file that doesn't touch the hardware (no <avr/...>
+        # or <util/...> include), plus any .c files in test/test_helpers/. From an archive,
+        # the linker only takes the files a test actually uses: callbacks/time_test pulls in
+        # callbacks/time.c, which pulls in collections/handle.c and collections/time_heap.c.
+        # So a file that calls hardware code (input/switch.c calls hardware/gpio.c) can sit
+        # in the archive harmlessly, as long as no test uses it. Compiling each file once
+        # also means each warning is printed once, not once per test.
+        lib_files="$(find {{.SRC_DIR}}/lib -name '*.c' | sort | xargs grep -L -E '#include <(avr|util)/') $(find {{.TEST_DIR}}/test_helpers -name '*.c' 2>/dev/null | sort)"
+        objs=""
+        for f in $lib_files; do
+          obj="$out_dir/obj/$(echo "${f%.c}" | tr / _).o"
+          xcrun clang {{.HOST_CFLAGS}} -DCALLBACKS_TIME_CAPACITY={{.CALLBACKS_TIME_CAPACITY}} -I {{.SRC_DIR}} -I {{.TEST_DIR}} \
+            -c "$f" -o "$obj" || { echo "${red}Couldn't compile $f, so no tests ran${plain}"; exit 1; }
+          objs="$objs $obj"
+        done
+        ar rcs "$out_dir/libtest.a" $objs
+
+        total=0
+        failed_names=""
+        for test_file in $test_files; do
+          name=${test_file#{{.TEST_DIR}}/}
+          name=${name%_test.c}
+          exe="$out_dir/$(echo "$name" | tr / _)_test"
+          total=$((total + 1))
+          echo "── $name"
+          # -dead_strip: the linker also drops any code the test never reaches. A test whose
+          # source file was renamed or deleted fails here, with "Undefined symbols".
+          if result=$(xcrun clang {{.HOST_CFLAGS}} -DCALLBACKS_TIME_CAPACITY={{.CALLBACKS_TIME_CAPACITY}} \
+                          -I {{.SRC_DIR}} -I {{.TEST_DIR}} "$test_file" "$out_dir/libtest.a" \
+                          -Wl,-dead_strip -o "$exe" 2>&1); then
+            [ -n "$result" ] && echo "$result" | sed 's/^/   /' # compiler warnings, if any
+            # Inside an `if`, so a failing test doesn't stop the whole script
+            if result=$("$exe" 2>&1); then status=0; else status=1; fi
+          else
+            status=1
+          fi
+          # The test's own output (or the compiler's errors), indented under its name
+          if [ -n "$result" ]; then
+            if [ "$status" -eq 0 ]; then
+              echo "$result" | sed "s/^/   ${dim}/; s/\$/${plain}/"
+            else
+              echo "$result" | sed "s/^/   ${red}/; s/\$/${plain}/"
+            fi
+          fi
+          if [ "$status" -eq 0 ]; then
+            echo "   ${green}passed${plain}"
+          else
+            echo "   ${red}FAILED${plain}"
+            failed_names="$failed_names $name"
+          fi
+        done
+
+        echo
+        if [ -n "$failed_names" ]; then
+          count=$(echo $failed_names | wc -w | tr -d ' ')
+          echo "${red}$count of $total FAILED:${plain}"
+          for n in $failed_names; do
+            echo "${red}  ✗ $n${plain}"
+          done
+          exit 1
+        fi
+        echo "${green}All $total passed${plain}"
+
   test:watch:
-    desc: Re-run the unit tests every time a file in src/ or test/ changes (needs watchexec)
+    desc: Re-run the unit tests whenever src/ or test/ changes (`task test:watch -- slotmap` for some) (needs watchexec)
     preconditions:
       - sh: command -v watchexec
         msg: 'watchexec not found — install it with: brew install watchexec'
@@ -239,7 +264,7 @@ tasks:
       - >-
         watchexec --clear --on-busy-update=queue
         --watch {{.SRC_DIR}} --watch {{.TEST_DIR}} --exts c,h
-        -- task test
+        -- task test -- {{.CLI_ARGS}}
 
   fmt:
     desc: Format all C files in src/ and test/ (style lives in .clang-format)
@@ -282,11 +307,12 @@ tasks:
           echo "# Each section between '---' lines applies to the paths in its If: block."
           echo
           echo "# test/ runs on this Mac: the Mac's own headers, plus src/ for the code under test"
+          echo "# and test/ for the shared test helpers"
           echo "If:"
           echo "  PathMatch: {{.TEST_DIR}}/.*"
           echo "CompileFlags:"
           echo "  Add:"
-          for f in -xc {{.HOST_CFLAGS}} -DCALLBACKS_TIME_CAPACITY={{.CALLBACKS_TIME_CAPACITY}} -isysroot"$(xcrun --show-sdk-path)" -I"$(realpath {{.SRC_DIR}})"; do
+          for f in -xc {{.HOST_CFLAGS}} -DCALLBACKS_TIME_CAPACITY={{.CALLBACKS_TIME_CAPACITY}} -isysroot"$(xcrun --show-sdk-path)" -I"$(realpath {{.SRC_DIR}})" -I"$(realpath {{.TEST_DIR}})"; do
             echo "    - $f"
           done
           echo "---"

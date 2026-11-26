@@ -72,6 +72,7 @@ export PATH="$(brew --prefix avr-gcc@16)/bin:$PATH"  # avr-gcc@16 is keg-only
 | `task dev`        | Rebuild whenever a source file changes                |
 | `task test`       | Run the unit tests in `test/` on your Mac             |
 | `task test:watch` | Re-run the unit tests whenever a source file changes  |
+| `task test -- slotmap` | Run only the tests whose path contains `slotmap` (works with `test:watch` too) |
 | `task flash`      | Build and upload to an Uno over USB                   |
 | `task monitor`    | Serial monitor in the browser (Chrome, Edge or Brave) |
 | `task monitor:terminal` | Serial monitor in the terminal (quit: Ctrl-A, K, Y) |
@@ -85,9 +86,17 @@ its own `main()`, linked with its source file plus every file in `src/lib/` that
 `<avr/...>` or `<util/...>` (so `callbacks/time` can use `collections/handle` and
 `collections/time_heap`). The linker drops whatever a test doesn't use, so a file that calls
 hardware code (like `input/switch`, which calls `hardware/gpio`) can sit in that list as long as
-no test uses it.
-`task test` runs them all at the firmware's `CALLBACKS_TIME_CAPACITY`, then the callbacks tests
-again at the library's maximum of 255.
+no test uses it. Code shared between tests goes in `test/test_helpers/`, included by its path from
+`test/` (`#include "test_helpers/assert.h"`); any `.c` files there are available to every test.
+Tests are compiled with the firmware's `CALLBACKS_TIME_CAPACITY`. A test that needs another value
+compiles its own copy of the code instead: `test/lib/callbacks/time_max_capacity_test.c` sets the
+capacity to the library's maximum of 255, includes `src/lib/callbacks/time.c`, and then runs every
+test in `time_test.c` again.
+
+To run only some tests, put part of their path after `--`: `task test -- slotmap` runs
+`test/lib/collections/slotmap_test.c`, and `task test -- collections` runs every test in that
+folder. The same works with `task test:watch -- slotmap`, which re-runs them whenever anything in
+`src/` or `test/` changes.
 
 ### Configuration
 

@@ -1,15 +1,8 @@
 #include "lib/collections/time_heap.h"
+#include "test_helpers/assert.h"
 #include <stdint.h>
 #include <stdio.h>
 #include <stdlib.h>
-
-#define CHECK(condition)                                                                           \
-    do {                                                                                           \
-        if (!(condition)) {                                                                        \
-            fprintf(stderr, "%s:%d: failed: %s\n", __FILE__, __LINE__, #condition);                \
-            exit(1);                                                                               \
-        }                                                                                          \
-    } while (0)
 
 // Heaps of several sizes. Each test calls time_heap_init on the one it uses, so they
 // start fresh.
@@ -30,19 +23,19 @@ static bool entry_before(time_heap_entry_t a, time_heap_entry_t b) {
 // Check everything the heap promises: items and pos agree, each id appears once, ids not
 // in the heap are marked absent, and no child comes before its parent.
 static void check_invariants(const time_heap_t *heap) {
-    CHECK(heap->len <= heap->capacity);
+    TEST_ASSERT(heap->len <= heap->capacity);
     size_t present = 0;
     for (uint8_t id = 0; id < heap->capacity; id++) {
         uint8_t position = heap->pos[id];
         if (position != UINT8_MAX) {
-            CHECK(position < heap->len);
-            CHECK(heap->items[position].id == id);
+            TEST_ASSERT(position < heap->len);
+            TEST_ASSERT(heap->items[position].id == id);
             present++;
         }
     }
-    CHECK(present == heap->len);
+    TEST_ASSERT(present == heap->len);
     for (uint16_t position = 1; position < heap->len; position++) {
-        CHECK(!entry_before(heap->items[position], heap->items[(position - 1) / 2]));
+        TEST_ASSERT(!entry_before(heap->items[position], heap->items[(position - 1) / 2]));
     }
 }
 
@@ -63,42 +56,42 @@ static void test_empty(void) {
     time_heap_init(h);
     check_invariants(h);
     time_heap_entry_t out = {.deadline = 42, .id = 42};
-    CHECK(time_heap_len(h) == 0);
-    CHECK(!time_heap_peek(h, &out));
-    CHECK(!time_heap_pop(h, &out));
-    CHECK(out.deadline == 42 && out.id == 42); // left alone
-    CHECK(!time_heap_remove(h, 0));
-    CHECK(!time_heap_update(h, 0, 5));
-    CHECK(!time_heap_contains(h, 0));
+    TEST_ASSERT(time_heap_len(h) == 0);
+    TEST_ASSERT(!time_heap_peek(h, &out));
+    TEST_ASSERT(!time_heap_pop(h, &out));
+    TEST_ASSERT(out.deadline == 42 && out.id == 42); // left alone
+    TEST_ASSERT(!time_heap_remove(h, 0));
+    TEST_ASSERT(!time_heap_update(h, 0, 5));
+    TEST_ASSERT(!time_heap_contains(h, 0));
 }
 
 static void test_single_and_capacity_one(void) {
     time_heap_t *h = &heap1;
     time_heap_init(h);
     time_heap_entry_t out;
-    CHECK(!time_heap_insert(h, 1, 100)); // out of range
-    CHECK(time_heap_insert(h, 0, 100));
-    CHECK(!time_heap_insert(h, 0, 50)); // duplicate, even with a different deadline
-    CHECK(time_heap_len(h) == 1);
-    CHECK(time_heap_contains(h, 0));
-    CHECK(time_heap_peek(h, &out) && out.id == 0 && out.deadline == 100);
-    CHECK(time_heap_update(h, 0, 200));
-    CHECK(time_heap_peek(h, &out) && out.deadline == 200);
-    CHECK(time_heap_pop(h, &out) && out.id == 0 && out.deadline == 200);
-    CHECK(time_heap_len(h) == 0);
-    CHECK(!time_heap_contains(h, 0));
+    TEST_ASSERT(!time_heap_insert(h, 1, 100)); // out of range
+    TEST_ASSERT(time_heap_insert(h, 0, 100));
+    TEST_ASSERT(!time_heap_insert(h, 0, 50)); // duplicate, even with a different deadline
+    TEST_ASSERT(time_heap_len(h) == 1);
+    TEST_ASSERT(time_heap_contains(h, 0));
+    TEST_ASSERT(time_heap_peek(h, &out) && out.id == 0 && out.deadline == 100);
+    TEST_ASSERT(time_heap_update(h, 0, 200));
+    TEST_ASSERT(time_heap_peek(h, &out) && out.deadline == 200);
+    TEST_ASSERT(time_heap_pop(h, &out) && out.id == 0 && out.deadline == 200);
+    TEST_ASSERT(time_heap_len(h) == 0);
+    TEST_ASSERT(!time_heap_contains(h, 0));
     check_invariants(h);
 }
 
 static void test_rejects_bad_ids(void) {
     time_heap_t *h = &heap4;
     time_heap_init(h);
-    CHECK(!time_heap_insert(h, 4, 1));
-    CHECK(!time_heap_insert(h, 255, 1));
-    CHECK(!time_heap_contains(h, 200));
-    CHECK(!time_heap_remove(h, 200));
-    CHECK(!time_heap_update(h, 200, 1));
-    CHECK(time_heap_len(h) == 0);
+    TEST_ASSERT(!time_heap_insert(h, 4, 1));
+    TEST_ASSERT(!time_heap_insert(h, 255, 1));
+    TEST_ASSERT(!time_heap_contains(h, 200));
+    TEST_ASSERT(!time_heap_remove(h, 200));
+    TEST_ASSERT(!time_heap_update(h, 200, 1));
+    TEST_ASSERT(time_heap_len(h) == 0);
 }
 
 static void test_pops_in_order(void) {
@@ -106,15 +99,15 @@ static void test_pops_in_order(void) {
     time_heap_init(h);
     const millis_t deadlines[6] = {50, 10, 40, 20, 60, 30};
     for (uint8_t id = 0; id < 6; id++) {
-        CHECK(time_heap_insert(h, id, deadlines[id]));
+        TEST_ASSERT(time_heap_insert(h, id, deadlines[id]));
         check_invariants(h);
     }
     const uint8_t expected[6] = {1, 3, 5, 2, 0, 4};
     for (size_t index = 0; index < 6; index++) {
         time_heap_entry_t out;
-        CHECK(time_heap_pop(h, &out));
-        CHECK(out.id == expected[index]);
-        CHECK(out.deadline == deadlines[out.id]);
+        TEST_ASSERT(time_heap_pop(h, &out));
+        TEST_ASSERT(out.id == expected[index]);
+        TEST_ASSERT(out.deadline == deadlines[out.id]);
         check_invariants(h);
     }
 }
@@ -124,11 +117,11 @@ static void test_equal_deadlines_break_ties_by_id(void) {
     time_heap_init(h);
     const uint8_t order[5] = {3, 0, 4, 1, 2};
     for (size_t index = 0; index < 5; index++) {
-        CHECK(time_heap_insert(h, order[index], 7));
+        TEST_ASSERT(time_heap_insert(h, order[index], 7));
     }
     for (uint8_t id = 0; id < 5; id++) {
         time_heap_entry_t out;
-        CHECK(time_heap_pop(h, &out) && out.id == id);
+        TEST_ASSERT(time_heap_pop(h, &out) && out.id == id);
     }
 }
 
@@ -137,13 +130,13 @@ static void test_equal_deadlines_break_ties_by_id(void) {
 static void test_full_64_bit_range(void) {
     time_heap_t *h = &heap7;
     time_heap_init(h);
-    CHECK(time_heap_insert(h, 0, UINT64_MAX));
-    CHECK(time_heap_insert(h, 1, 0x100000010)); // just past the old 32-bit wrap
-    CHECK(time_heap_insert(h, 2, 0xFFFFFFF0));  // just before it
-    CHECK(time_heap_insert(h, 3, 0));
-    CHECK(time_heap_insert(h, 4, UINT64_C(1) << 63)); // far more than 24.8 days apart
-    CHECK(time_heap_insert(h, 5, 0x80000000));        // was ambiguous against 0
-    CHECK(time_heap_insert(h, 6, 0x100000000));       // exactly 2^32
+    TEST_ASSERT(time_heap_insert(h, 0, UINT64_MAX));
+    TEST_ASSERT(time_heap_insert(h, 1, 0x100000010)); // just past the old 32-bit wrap
+    TEST_ASSERT(time_heap_insert(h, 2, 0xFFFFFFF0));  // just before it
+    TEST_ASSERT(time_heap_insert(h, 3, 0));
+    TEST_ASSERT(time_heap_insert(h, 4, UINT64_C(1) << 63)); // far more than 24.8 days apart
+    TEST_ASSERT(time_heap_insert(h, 5, 0x80000000));        // was ambiguous against 0
+    TEST_ASSERT(time_heap_insert(h, 6, 0x100000000));       // exactly 2^32
     check_invariants(h);
     const uint8_t expected[7] = {3, 5, 2, 6, 1, 4, 0};
     const millis_t expected_deadline[7] = {
@@ -151,9 +144,9 @@ static void test_full_64_bit_range(void) {
     };
     for (size_t index = 0; index < 7; index++) {
         time_heap_entry_t out;
-        CHECK(time_heap_pop(h, &out));
-        CHECK(out.id == expected[index]);
-        CHECK(out.deadline == expected_deadline[index]); // all 64 bits came back
+        TEST_ASSERT(time_heap_pop(h, &out));
+        TEST_ASSERT(out.id == expected[index]);
+        TEST_ASSERT(out.deadline == expected_deadline[index]); // all 64 bits came back
         check_invariants(h);
     }
 }
@@ -163,21 +156,21 @@ static void test_full_64_bit_range(void) {
 static void test_high_bits_matter(void) {
     time_heap_t *h = &heap4;
     time_heap_init(h);
-    CHECK(time_heap_insert(h, 0, 0x200000005));
-    CHECK(time_heap_insert(h, 1, 0x100000005));
-    CHECK(time_heap_insert(h, 2, 0x000000005));
+    TEST_ASSERT(time_heap_insert(h, 0, 0x200000005));
+    TEST_ASSERT(time_heap_insert(h, 1, 0x100000005));
+    TEST_ASSERT(time_heap_insert(h, 2, 0x000000005));
     time_heap_entry_t out;
-    CHECK(time_heap_pop(h, &out) && out.id == 2 && out.deadline == 5);
-    CHECK(time_heap_pop(h, &out) && out.id == 1 && out.deadline == 0x100000005);
-    CHECK(time_heap_pop(h, &out) && out.id == 0 && out.deadline == 0x200000005);
+    TEST_ASSERT(time_heap_pop(h, &out) && out.id == 2 && out.deadline == 5);
+    TEST_ASSERT(time_heap_pop(h, &out) && out.id == 1 && out.deadline == 0x100000005);
+    TEST_ASSERT(time_heap_pop(h, &out) && out.id == 0 && out.deadline == 0x200000005);
 
     // The same through update: moving a deadline across 2^32 in either direction
-    CHECK(time_heap_insert(h, 0, 0x0FFFFFFFF));
-    CHECK(time_heap_insert(h, 1, 0x100000000));
-    CHECK(time_heap_update(h, 0, 0x100000001)); // now later than id 1
-    CHECK(time_heap_peek(h, &out) && out.id == 1);
-    CHECK(time_heap_update(h, 1, 0x200000000)); // now later than id 0
-    CHECK(time_heap_peek(h, &out) && out.id == 0 && out.deadline == 0x100000001);
+    TEST_ASSERT(time_heap_insert(h, 0, 0x0FFFFFFFF));
+    TEST_ASSERT(time_heap_insert(h, 1, 0x100000000));
+    TEST_ASSERT(time_heap_update(h, 0, 0x100000001)); // now later than id 1
+    TEST_ASSERT(time_heap_peek(h, &out) && out.id == 1);
+    TEST_ASSERT(time_heap_update(h, 1, 0x200000000)); // now later than id 0
+    TEST_ASSERT(time_heap_peek(h, &out) && out.id == 0 && out.deadline == 0x100000001);
     check_invariants(h);
 }
 
@@ -190,10 +183,10 @@ static void make_seven(time_heap_t *h) {
     time_heap_init(h);
     const millis_t deadlines[7] = {1, 10, 2, 11, 12, 3, 4};
     for (uint8_t id = 0; id < 7; id++) {
-        CHECK(time_heap_insert(h, id, deadlines[id]));
+        TEST_ASSERT(time_heap_insert(h, id, deadlines[id]));
     }
     for (uint8_t id = 0; id < 7; id++) {
-        CHECK(h->items[id].id == id);
+        TEST_ASSERT(h->items[id].id == id);
     }
 }
 
@@ -203,35 +196,35 @@ static void test_remove_positions(void) {
 
     // Removing the root
     make_seven(h);
-    CHECK(time_heap_remove(h, 0));
+    TEST_ASSERT(time_heap_remove(h, 0));
     check_invariants(h);
-    CHECK(time_heap_peek(h, &out) && out.id == 2);
+    TEST_ASSERT(time_heap_peek(h, &out) && out.id == 2);
 
     // Removing the last leaf: nothing else moves
     make_seven(h);
-    CHECK(time_heap_remove(h, 6));
+    TEST_ASSERT(time_heap_remove(h, 6));
     check_invariants(h);
     for (uint8_t id = 0; id < 6; id++) {
-        CHECK(h->pos[id] == id);
+        TEST_ASSERT(h->pos[id] == id);
     }
 
     // Removing id 3 (under deadline 10): the last leaf, id 6 (deadline 4), fills the gap
     // and has to move UP past its new parent
     make_seven(h);
-    CHECK(time_heap_remove(h, 3));
+    TEST_ASSERT(time_heap_remove(h, 3));
     check_invariants(h);
-    CHECK(h->pos[6] == 1);
-    CHECK(h->pos[1] == 3);
+    TEST_ASSERT(h->pos[6] == 1);
+    TEST_ASSERT(h->pos[1] == 3);
 
     // Removing id 1 (internal): id 6 (deadline 4) fills the gap and still beats its new
     // children (11 and 12), so it stays. Then a later deadline makes it sift down.
     make_seven(h);
-    CHECK(time_heap_remove(h, 1));
+    TEST_ASSERT(time_heap_remove(h, 1));
     check_invariants(h);
-    CHECK(h->pos[6] == 1);
-    CHECK(time_heap_update(h, 6, 100));
+    TEST_ASSERT(h->pos[6] == 1);
+    TEST_ASSERT(time_heap_update(h, 6, 100));
     check_invariants(h);
-    CHECK(h->pos[6] >= 3); // moved down to a leaf
+    TEST_ASSERT(h->pos[6] >= 3); // moved down to a leaf
 }
 
 static void test_update_both_ways(void) {
@@ -240,18 +233,18 @@ static void test_update_both_ways(void) {
     make_seven(h);
 
     // A leaf becomes the earliest
-    CHECK(time_heap_update(h, 4, 0));
+    TEST_ASSERT(time_heap_update(h, 4, 0));
     check_invariants(h);
-    CHECK(time_heap_peek(h, &out) && out.id == 4 && out.deadline == 0);
+    TEST_ASSERT(time_heap_peek(h, &out) && out.id == 4 && out.deadline == 0);
 
     // The root becomes the latest
-    CHECK(time_heap_update(h, 4, 1000));
+    TEST_ASSERT(time_heap_update(h, 4, 1000));
     check_invariants(h);
-    CHECK(time_heap_peek(h, &out) && out.id == 0);
-    CHECK(h->items[h->pos[4]].deadline == 1000);
+    TEST_ASSERT(time_heap_peek(h, &out) && out.id == 0);
+    TEST_ASSERT(h->items[h->pos[4]].deadline == 1000);
 
     // The same deadline again is fine too
-    CHECK(time_heap_update(h, 2, 2));
+    TEST_ASSERT(time_heap_update(h, 2, 2));
     check_invariants(h);
 }
 
@@ -261,14 +254,14 @@ static void test_largest_capacity(void) {
     time_heap_init(h);
     // Insert with ever-earlier deadlines, so every insert climbs all the way to the root
     for (uint16_t id = 0; id < 255; id++) {
-        CHECK(time_heap_insert(h, (uint8_t)id, (millis_t)(255 - id)));
+        TEST_ASSERT(time_heap_insert(h, (uint8_t)id, (millis_t)(255 - id)));
     }
     check_invariants(h);
-    CHECK(time_heap_len(h) == 255);
+    TEST_ASSERT(time_heap_len(h) == 255);
     time_heap_entry_t out;
-    CHECK(time_heap_peek(h, &out) && out.id == 254);
+    TEST_ASSERT(time_heap_peek(h, &out) && out.id == 254);
     for (uint16_t expected = 255; expected-- > 0;) {
-        CHECK(time_heap_pop(h, &out) && out.id == expected);
+        TEST_ASSERT(time_heap_pop(h, &out) && out.id == expected);
     }
     check_invariants(h);
 }
@@ -278,7 +271,7 @@ static void test_largest_capacity(void) {
 static void test_operations_stay_logarithmic(void) {
     time_heap_t *h = &heap255;
     const unsigned long allowed = max_comparisons(255);
-    CHECK(allowed == 15);
+    TEST_ASSERT(allowed == 15);
     time_heap_entry_t out;
     unsigned long before;
 
@@ -286,30 +279,30 @@ static void test_operations_stay_logarithmic(void) {
     time_heap_init(h);
     for (uint16_t id = 0; id < 255; id++) {
         before = time_heap_comparisons;
-        CHECK(time_heap_insert(h, (uint8_t)id, (millis_t)(1000 - id)));
-        CHECK(time_heap_comparisons - before <= allowed);
+        TEST_ASSERT(time_heap_insert(h, (uint8_t)id, (millis_t)(1000 - id)));
+        TEST_ASSERT(time_heap_comparisons - before <= allowed);
     }
 
     // Worst case for update: the first entry becomes the last, so it sinks to a leaf; then
     // a leaf becomes the first, so it climbs back
-    CHECK(time_heap_peek(h, &out));
+    TEST_ASSERT(time_heap_peek(h, &out));
     before = time_heap_comparisons;
-    CHECK(time_heap_update(h, out.id, 5000));
-    CHECK(time_heap_comparisons - before <= allowed);
+    TEST_ASSERT(time_heap_update(h, out.id, 5000));
+    TEST_ASSERT(time_heap_comparisons - before <= allowed);
     uint8_t leaf = h->items[254].id;
     before = time_heap_comparisons;
-    CHECK(time_heap_update(h, leaf, 0));
-    CHECK(time_heap_comparisons - before <= allowed);
-    CHECK(time_heap_peek(h, &out) && out.id == leaf);
+    TEST_ASSERT(time_heap_update(h, leaf, 0));
+    TEST_ASSERT(time_heap_comparisons - before <= allowed);
+    TEST_ASSERT(time_heap_peek(h, &out) && out.id == leaf);
 
     // Removing from the middle, and popping everything
     before = time_heap_comparisons;
-    CHECK(time_heap_remove(h, h->items[100].id));
-    CHECK(time_heap_comparisons - before <= allowed);
+    TEST_ASSERT(time_heap_remove(h, h->items[100].id));
+    TEST_ASSERT(time_heap_comparisons - before <= allowed);
     while (time_heap_len(h) > 0) {
         before = time_heap_comparisons;
-        CHECK(time_heap_pop(h, &out));
-        CHECK(time_heap_comparisons - before <= allowed);
+        TEST_ASSERT(time_heap_pop(h, &out));
+        TEST_ASSERT(time_heap_comparisons - before <= allowed);
     }
     check_invariants(h);
 }
@@ -321,38 +314,38 @@ static void test_pop_if_expired(void) {
 
     // Empty: nothing to pop, whatever the time
     time_heap_init(h);
-    CHECK(!time_heap_pop_if_expired(h, &out, UINT64_MAX));
-    CHECK(out.deadline == 42 && out.id == 42); // left alone
+    TEST_ASSERT(!time_heap_pop_if_expired(h, &out, UINT64_MAX));
+    TEST_ASSERT(out.deadline == 42 && out.id == 42); // left alone
 
-    CHECK(time_heap_insert(h, 0, 300));
-    CHECK(time_heap_insert(h, 1, 100));
-    CHECK(time_heap_insert(h, 2, 200));
-    CHECK(time_heap_insert(h, 3, 200));
+    TEST_ASSERT(time_heap_insert(h, 0, 300));
+    TEST_ASSERT(time_heap_insert(h, 1, 100));
+    TEST_ASSERT(time_heap_insert(h, 2, 200));
+    TEST_ASSERT(time_heap_insert(h, 3, 200));
 
     // Not due yet: nothing is removed
-    CHECK(!time_heap_pop_if_expired(h, &out, 0));
-    CHECK(!time_heap_pop_if_expired(h, &out, 99));
-    CHECK(time_heap_len(h) == 4);
-    CHECK(out.id == 42);
+    TEST_ASSERT(!time_heap_pop_if_expired(h, &out, 0));
+    TEST_ASSERT(!time_heap_pop_if_expired(h, &out, 99));
+    TEST_ASSERT(time_heap_len(h) == 4);
+    TEST_ASSERT(out.id == 42);
 
     // Exactly at the deadline counts as due
-    CHECK(time_heap_pop_if_expired(h, &out, 100));
-    CHECK(out.id == 1 && out.deadline == 100);
-    CHECK(!time_heap_pop_if_expired(h, &out, 100)); // the next one is at 200
+    TEST_ASSERT(time_heap_pop_if_expired(h, &out, 100));
+    TEST_ASSERT(out.id == 1 && out.deadline == 100);
+    TEST_ASSERT(!time_heap_pop_if_expired(h, &out, 100)); // the next one is at 200
     check_invariants(h);
 
     // Well past several deadlines: they come out one per call, earliest first, ties by id
-    CHECK(time_heap_pop_if_expired(h, &out, 250) && out.id == 2 && out.deadline == 200);
-    CHECK(time_heap_pop_if_expired(h, &out, 250) && out.id == 3 && out.deadline == 200);
-    CHECK(!time_heap_pop_if_expired(h, &out, 250)); // id 0 is at 300
-    CHECK(time_heap_len(h) == 1 && time_heap_contains(h, 0));
+    TEST_ASSERT(time_heap_pop_if_expired(h, &out, 250) && out.id == 2 && out.deadline == 200);
+    TEST_ASSERT(time_heap_pop_if_expired(h, &out, 250) && out.id == 3 && out.deadline == 200);
+    TEST_ASSERT(!time_heap_pop_if_expired(h, &out, 250)); // id 0 is at 300
+    TEST_ASSERT(time_heap_len(h) == 1 && time_heap_contains(h, 0));
     check_invariants(h);
 
     // Far in the future, with 64-bit times
-    CHECK(time_heap_insert(h, 4, UINT64_C(1) << 40));
-    CHECK(time_heap_pop_if_expired(h, &out, UINT64_C(1) << 40) && out.id == 0);
-    CHECK(time_heap_pop_if_expired(h, &out, UINT64_C(1) << 40) && out.id == 4);
-    CHECK(time_heap_len(h) == 0);
+    TEST_ASSERT(time_heap_insert(h, 4, UINT64_C(1) << 40));
+    TEST_ASSERT(time_heap_pop_if_expired(h, &out, UINT64_C(1) << 40) && out.id == 0);
+    TEST_ASSERT(time_heap_pop_if_expired(h, &out, UINT64_C(1) << 40) && out.id == 4);
+    TEST_ASSERT(time_heap_len(h) == 0);
 }
 
 static uint32_t random_state = 98765;
@@ -388,7 +381,7 @@ static void test_random_against_model(time_heap_t *heap, millis_t start, millis_
 
         switch (next_random() % 4) {
         case 0: // insert
-            CHECK(time_heap_insert(heap, id, new_deadline) == !in_model[id]);
+            TEST_ASSERT(time_heap_insert(heap, id, new_deadline) == !in_model[id]);
             if (!in_model[id]) {
                 in_model[id] = true;
                 deadline[id] = new_deadline;
@@ -396,14 +389,14 @@ static void test_random_against_model(time_heap_t *heap, millis_t start, millis_
             }
             break;
         case 1: // remove
-            CHECK(time_heap_remove(heap, id) == in_model[id]);
+            TEST_ASSERT(time_heap_remove(heap, id) == in_model[id]);
             if (in_model[id]) {
                 in_model[id] = false;
                 model_len--;
             }
             break;
         case 2: // reschedule
-            CHECK(time_heap_update(heap, id, new_deadline) == in_model[id]);
+            TEST_ASSERT(time_heap_update(heap, id, new_deadline) == in_model[id]);
             if (in_model[id]) {
                 deadline[id] = new_deadline;
             }
@@ -420,10 +413,10 @@ static void test_random_against_model(time_heap_t *heap, millis_t start, millis_
                 }
             }
             time_heap_entry_t out;
-            CHECK(time_heap_pop(heap, &out) == found);
+            TEST_ASSERT(time_heap_pop(heap, &out) == found);
             if (found) {
-                CHECK(out.id == expected);
-                CHECK(out.deadline == deadline[expected]);
+                TEST_ASSERT(out.id == expected);
+                TEST_ASSERT(out.deadline == deadline[expected]);
                 in_model[expected] = false;
                 model_len--;
             }
@@ -431,13 +424,13 @@ static void test_random_against_model(time_heap_t *heap, millis_t start, millis_
         }
         }
 
-        CHECK(time_heap_comparisons - before <= allowed);
+        TEST_ASSERT(time_heap_comparisons - before <= allowed);
         check_invariants(heap);
-        CHECK(heap->len == model_len);
+        TEST_ASSERT(heap->len == model_len);
         for (uint8_t candidate = 0; candidate < capacity; candidate++) {
-            CHECK(time_heap_contains(heap, candidate) == in_model[candidate]);
+            TEST_ASSERT(time_heap_contains(heap, candidate) == in_model[candidate]);
             if (in_model[candidate]) {
-                CHECK(heap->items[heap->pos[candidate]].deadline == deadline[candidate]);
+                TEST_ASSERT(heap->items[heap->pos[candidate]].deadline == deadline[candidate]);
             }
         }
     }

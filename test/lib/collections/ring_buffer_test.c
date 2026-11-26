@@ -1,46 +1,10 @@
 #include "lib/collections/ring_buffer.h"
+#include "test_helpers/assert.h"
 #include <assert.h>
 #include <stdint.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
-
-#define ASSERT_CHAR(actual, expected)                                                              \
-    do {                                                                                           \
-        if (!actual.exists) {                                                                      \
-            fprintf(stderr, "%s:%d: failed: !exists\n", __FILE__, __LINE__);                       \
-            exit(1);                                                                               \
-        }                                                                                          \
-        if ((char)actual.byte != expected) {                                                       \
-            fprintf(stderr, "%s:%d: failed: got %c, expected %c\n", __FILE__, __LINE__,            \
-                    (char)actual.byte, expected);                                                  \
-            exit(1);                                                                               \
-        }                                                                                          \
-    } while (0)
-
-#define ASSERT_STRING(actual, expected)                                                            \
-    do {                                                                                           \
-        if (!actual.exists) {                                                                      \
-            fprintf(stderr, "%s:%d: failed: !exists\n", __FILE__, __LINE__);                       \
-            exit(1);                                                                               \
-        }                                                                                          \
-        if (strlen(actual.data) != strlen(expected)) {                                             \
-            fprintf(stderr,                                                                        \
-                    "%s:%d: failed: different length, got %zu (\"%s\") expected %zu (\"%s\")\n",   \
-                    __FILE__, __LINE__, strlen(actual.data), actual.data, strlen(expected),        \
-                    expected);                                                                     \
-            exit(1);                                                                               \
-        }                                                                                          \
-        for (size_t index = 0; index < strlen(expected); index++) {                                \
-            if (expected[index] != actual.data[index]) {                                           \
-                fprintf(stderr,                                                                    \
-                        "%s:%d: failed at index %zu: got %c, expected %c (\"%s\" vs \"%s\")\n",    \
-                        __FILE__, __LINE__, index, actual.data[index], expected[index],            \
-                        actual.data, expected);                                                    \
-                exit(1);                                                                           \
-            }                                                                                      \
-        }                                                                                          \
-    } while (0)
 
 static ring_buffer_t make_test_buffer(size_t size) {
     ring_buffer_t ring_buffer = {.size = size, .queue = malloc(size)};
@@ -85,7 +49,7 @@ void test_ring_buffer_char() {
 
     auto result = ring_buffer_read_byte(&ring_buffer);
 
-    ASSERT_CHAR(result, 'H');
+    TEST_ASSERT_CHAR(result, 'H');
 
     free_test_buffer(&ring_buffer);
 }
@@ -97,7 +61,7 @@ void test_ring_buffer_string() {
 
     auto result = ring_buffer_read_all_as_string(&ring_buffer);
 
-    ASSERT_STRING(result, "Hello World");
+    TEST_ASSERT_STRING(result, "Hello World");
 
     free(result.data);
     free_test_buffer(&ring_buffer);
@@ -119,7 +83,7 @@ void test_ring_buffer_overfill() {
 
     auto result = ring_buffer_read_all_as_string(&ring_buffer);
 
-    ASSERT_STRING(result, "DEFG");
+    TEST_ASSERT_STRING(result, "DEFG");
 
     free(result.data);
     free_test_buffer(&ring_buffer);
@@ -158,7 +122,7 @@ void test_ring_buffer_exactly_full() {
     ring_buffer_write_string(&ring_buffer, "ABCD");
 
     auto result = ring_buffer_read_all_as_string(&ring_buffer);
-    ASSERT_STRING(result, "ABCD");
+    TEST_ASSERT_STRING(result, "ABCD");
 
     free(result.data);
     free_test_buffer(&ring_buffer);
@@ -175,7 +139,7 @@ void test_ring_buffer_wrap() {
     ring_buffer_write_string(&ring_buffer, "CDEF"); // memory: EFCD, read order: CDEF
 
     auto result = ring_buffer_read_all_as_string(&ring_buffer);
-    ASSERT_STRING(result, "CDEF");
+    TEST_ASSERT_STRING(result, "CDEF");
 
     free(result.data);
     free_test_buffer(&ring_buffer);
@@ -189,7 +153,7 @@ void test_ring_buffer_overfill_many() {
     ring_buffer_write_string(&ring_buffer, "ABCDEFGHIJ");
 
     auto result = ring_buffer_read_all_as_string(&ring_buffer);
-    ASSERT_STRING(result, "GHIJ");
+    TEST_ASSERT_STRING(result, "GHIJ");
 
     free(result.data);
     free_test_buffer(&ring_buffer);
