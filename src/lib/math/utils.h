@@ -1,9 +1,8 @@
+#pragma once
 /**
  * @file math_utils.h
  * @brief Small integer math helpers (no floating point: the chip has no FPU).
  */
-#ifndef MATH_UTILS_H
-#define MATH_UTILS_H
 
 #include <stdint.h>
 
@@ -14,5 +13,3 @@
  * rounds to the nearest instead.
  */
 uint32_t divide_round(uint32_t numerator, uint32_t divisor);
-
-#endif

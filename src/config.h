@@ -1,8 +1,5 @@
-#ifndef APP_CONFIG_H
-#define APP_CONFIG_H
-
-#include "helpers/pins.h"
-#include "helpers/time_utils.h"
+#pragma once
+#include "lib/all.h"
 
 ///////// App-specific config /////////////
 [[maybe_unused]] constexpr pin_id PIN_LED = PIN_DIGITAL_11;
@@ -18,5 +15,3 @@
 // F_CPU
 // BAUD_RATE
 // CALLBACKS_TIME_CAPACITY
-
-#endif

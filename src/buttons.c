@@ -1,6 +1,6 @@
 #include "buttons.h"
 #include "config.h"
-#include "helpers/input_switch.h"
+#include "lib/all.h"
 #include <avr/interrupt.h>
 #include <stddef.h>
 

@@ -1,11 +1,10 @@
+#pragma once
 /**
- * @file time_utils.h
+ * @file timer.h
  * @brief A millisecond clock, counted by Timer0 interrupts.
  *
  * Uses Timer0 and its compare-match A interrupt, so don't use Timer0 elsewhere.
  */
-#ifndef TIME_UTILS_H
-#define TIME_UTILS_H
 
 #include <stdint.h>
 
@@ -32,5 +31,3 @@ void init_time();
  * compare: `time_now() >= deadline`.
  */
 millis_t time_now();
-
-#endif

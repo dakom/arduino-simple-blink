@@ -1,7 +1,5 @@
-#include "helpers/input_switch.h"
-#include "helpers/callbacks_time.h"
-#include "helpers/pins.h"
-#include "helpers/time_utils.h"
+#include "lib/input/switch.h"
+#include "lib/callbacks/time.h"
 #include <stdint.h>
 
 // How debouncing works, per switch:

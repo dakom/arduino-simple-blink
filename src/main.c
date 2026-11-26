@@ -9,9 +9,7 @@
  * fast as it can go round.
  */
 #include "buttons.h"
-#include "helpers/callbacks_time.h"
-#include "helpers/serial.h"
-#include "helpers/time_utils.h"
+#include "lib/all.h"
 #include "lights.h"
 #include <avr/interrupt.h>
 

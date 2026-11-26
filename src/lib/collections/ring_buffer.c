@@ -1,4 +1,4 @@
-#include "ring_buffer.h"
+#include "lib/collections/ring_buffer.h"
 
 // Move a cursor one slot forward, wrapping from the last slot back to slot 0.
 static size_t next_slot(const ring_buffer_t *ring_buffer, size_t cursor) {

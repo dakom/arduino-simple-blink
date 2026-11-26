@@ -1,10 +1,6 @@
 #include "lights.h"
 #include "config.h"
-#include "helpers/callbacks_time.h"
-#include "helpers/handle_pool.h"
-#include "helpers/pins.h"
-#include "helpers/serial.h"
-#include "helpers/time_utils.h"
+#include "lib/all.h"
 
 // The blink is a chain of timed callbacks: each toggle_light flips the LED and schedules
 // the next one, BLINK_SPEED later. Stopping cancels whichever toggle is pending, which ends

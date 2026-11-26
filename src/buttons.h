@@ -1,3 +1,4 @@
+#pragma once
 /**
  * @file buttons.h
  * @brief The app's buttons and switches, each debounced by helpers/input_switch.
@@ -10,10 +11,8 @@
  * To add one: add its id below (before BUTTON_ID_COUNT), add its entry to the table in
  * buttons.c, and make sure the pin-change interrupt for its port runs (see the ISR there).
  */
-#ifndef BUTTONS_H
-#define BUTTONS_H
 
-#include "helpers/time_utils.h"
+#include "lib/all.h"
 
 /** @brief Names each button, and is its index in the table in buttons.c. */
 typedef enum button_id_t {
@@ -45,5 +44,3 @@ void buttons_update(millis_t now);
  * @param button_id  Which button. Must be a real one, not BUTTON_ID_COUNT.
  */
 bool button_is_pressed(button_id_t button_id);
-
-#endif

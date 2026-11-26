@@ -1,7 +1,5 @@
-#include "helpers/callbacks_time.h"
-#include "helpers/handle_pool.h"
-#include "helpers/time_heap.h"
-#include "helpers/time_utils.h"
+#include "lib/callbacks/time.h"
+#include "lib/collections/time_heap.h"
 #include <stdint.h>
 
 // CALLBACKS_TIME_CAPACITY comes from the compiler flags, set in Taskfile.yml

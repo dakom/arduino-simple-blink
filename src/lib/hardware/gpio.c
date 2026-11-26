@@ -8,7 +8,7 @@
  *
  * See "I/O-Ports" in the ATmega328P datasheet.
  */
-#include "pins.h"
+#include "lib/hardware/gpio.h"
 #include <avr/io.h>
 
 typedef enum pin_group : uint8_t {

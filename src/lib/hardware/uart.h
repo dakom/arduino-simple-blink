@@ -1,12 +1,11 @@
+#pragma once
 /**
- * @file serial.h
+ * @file uart.h
  * @brief Interrupt-driven serial output on USART0 (pin D1, through the Uno's USB port).
  *
  * Writing only queues the text and returns at once; an interrupt sends it a byte
  * at a time in the background. Format is 8N1 (8 data bits, no parity, 1 stop bit).
  */
-#ifndef SERIAL_H
-#define SERIAL_H
 
 /**
  * @brief Set the speed and switch the transmitter on.
@@ -24,5 +23,3 @@ void init_serial();
  * the oldest unsent bytes are dropped. Use "\r\n" to end lines in a terminal.
  */
 void serial_write_string(const char *string);
-
-#endif

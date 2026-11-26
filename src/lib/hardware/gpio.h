@@ -1,5 +1,6 @@
+#pragma once
 /**
- * @file pins.h
+ * @file gpio.h
  * @brief Digital I/O for the Arduino Uno (ATmega328P).
  *
  * A pin's level sets its voltage; the connected circuit determines the current.
@@ -8,8 +9,6 @@
  *
  * These functions don't validate pin IDs and aren't interrupt-safe.
  */
-#ifndef PINS_H
-#define PINS_H
 
 #include <stdint.h>
 
@@ -102,5 +101,3 @@ pin_flag pin_get_flag(pin_id id);
  * @param id  The pin to watch.
  */
 void pin_interrupt_enable(pin_id id);
-
-#endif /* PINS_H */

@@ -1,5 +1,6 @@
+#pragma once
 /**
- * @file handle_pool.h
+ * @file handle.h
  * @brief Hands out handles: small ids that can tell when the thing they named is gone.
  *
  * A handle pool answers one question: "is the thing this handle named still alive?"
@@ -50,8 +51,6 @@
  *
  * Pure C with no hardware access, so it can be unit tested on the Mac.
  */
-#ifndef HANDLE_POOL_H
-#define HANDLE_POOL_H
 
 #include <stdint.h>
 
@@ -148,5 +147,3 @@ handle_t handle_pool_handle_at(const handle_pool_t *pool, uint8_t index);
 
 /** @brief Number of slots in use. */
 uint8_t handle_pool_count(const handle_pool_t *pool);
-
-#endif

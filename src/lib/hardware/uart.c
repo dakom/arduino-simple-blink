@@ -1,6 +1,6 @@
-#include "serial.h"
-#include "math_utils.h"
-#include "ring_buffer.h"
+#include "lib/hardware/uart.h"
+#include "lib/collections/ring_buffer.h"
+#include "lib/math/utils.h"
 #include <avr/interrupt.h>
 #include <avr/io.h>
 #include <util/atomic.h>

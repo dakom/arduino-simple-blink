@@ -1,4 +1,4 @@
-#include "handle_pool.h"
+#include "lib/collections/handle.h"
 
 // "No slot", for the free list only. Never a real index, since there are at most 255.
 #define NO_SLOT UINT8_MAX

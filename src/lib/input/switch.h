@@ -1,3 +1,4 @@
+#pragma once
 /**
  * @file input_switch.h
  * @brief A debounced switch or button on any pin, driven by its pin-change interrupt.
@@ -29,12 +30,10 @@
  * - input_switch_handle_interrupt is the only function here that may be called from an
  *   interrupt; the others are main loop only.
  */
-#ifndef INPUT_SWITCH_H
-#define INPUT_SWITCH_H
 
-#include "helpers/handle_pool.h"
-#include "helpers/pins.h"
-#include "helpers/time_utils.h"
+#include "lib/collections/handle.h"
+#include "lib/hardware/gpio.h"
+#include "lib/hardware/timer.h"
 
 /** @brief What the main loop knows about a switch. Only touched outside interrupts. */
 typedef struct input_switch_state_t {
@@ -97,5 +96,3 @@ void input_switch_update(input_switch_t *input_switch, millis_t now, millis_t de
  * change when this switch's own level differs from the last one it saw.
  */
 void input_switch_handle_interrupt(input_switch_t *input_switch);
-
-#endif

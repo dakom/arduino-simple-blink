@@ -1,3 +1,4 @@
+#pragma once
 /**
  * @file lights.h
  * @brief A non-blocking blink, driven by timed callbacks: call lights_update() every time round
@@ -6,10 +7,8 @@
  * Needs init_time(), init_serial() and init_callbacks_time() to have run, and interrupts
  * enabled.
  */
-#ifndef LIGHTS_H
-#define LIGHTS_H
 
-#include "helpers/time_utils.h"
+#include "lib/all.h"
 
 /** @brief Set the LED pin up as an output, off. Call once at startup. */
 void init_lights();
@@ -26,5 +25,3 @@ void init_lights();
  * @param now     The current time, from time_now().
  */
 void lights_update(bool active, millis_t now);
-
-#endif

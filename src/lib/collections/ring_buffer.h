@@ -1,3 +1,4 @@
+#pragma once
 /**
  * @file ring_buffer.h
  * @brief A fixed-size first-in, first-out byte queue that wraps around its array.
@@ -8,8 +9,6 @@
  * Pure C with no hardware access, so it can be unit tested on the Mac.
  * Not interrupt-safe on its own.
  */
-#ifndef RING_BUFFER_H
-#define RING_BUFFER_H
 
 #include <stddef.h>
 #include <stdint.h>
@@ -47,5 +46,3 @@ void ring_buffer_write_string(ring_buffer_t *ring_buffer, const char *data);
  * @brief Take the oldest unread byte out of the buffer.
  */
 ring_buffer_result_t ring_buffer_read_byte(ring_buffer_t *ring_buffer);
-
-#endif

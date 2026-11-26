@@ -1,5 +1,6 @@
+#pragma once
 /**
- * @file callbacks_time.h
+ * @file time.h
  * @brief Run a function once at a set time: one shared queue of timed callbacks.
  *
  * Any module can schedule a callback, and the main loop runs the ones that are due:
@@ -29,11 +30,9 @@
  *
  * Main loop only: none of these may be called from an interrupt.
  */
-#ifndef CALLBACKS_TIME_H
-#define CALLBACKS_TIME_H
 
-#include "helpers/handle_pool.h"
-#include "time_utils.h"
+#include "lib/collections/handle.h"
+#include "lib/hardware/timer.h"
 
 /** @brief A function to call later, with the context it was scheduled with. */
 typedef void (*callback_time_t)(void *context);
@@ -74,5 +73,3 @@ void callbacks_time_execute(millis_t now);
  *         cancelled) or HANDLE_NONE.
  */
 bool callbacks_time_cancel(handle_t handle);
-
-#endif

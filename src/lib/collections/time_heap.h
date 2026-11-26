@@ -1,3 +1,4 @@
+#pragma once
 /**
  * @file time_heap.h
  * @brief A queue of small ids ordered by deadline, that can also remove or reschedule any id.
@@ -37,10 +38,8 @@
  *
  * Pure C with no hardware access, so it can be unit tested on the Mac.
  */
-#ifndef TIME_HEAP_H
-#define TIME_HEAP_H
 
-#include "time_utils.h"
+#include "lib/hardware/timer.h"
 #include <stdint.h>
 
 /** @brief The most ids a heap can hold. Position 255 is kept to mean "not in the heap". */
@@ -141,6 +140,4 @@ bool time_heap_update(time_heap_t *heap, uint8_t id, millis_t deadline);
  * so firmware code can't use it. See COUNT_COMPARISON in time_heap.c.
  */
 extern unsigned long time_heap_comparisons;
-#endif
-
 #endif
