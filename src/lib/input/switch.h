@@ -1,19 +1,19 @@
 #pragma once
 /**
- * @file input_switch.h
+ * @file switch.h
  * @brief A debounced switch or button on any pin, driven by its pin-change interrupt.
  *
  * A change only counts once the pin has been steady for the debounce time, so the
  * contacts bouncing for a millisecond or two after a press can't register as several
  * presses. Each switch is one input_switch_t, which you define and wire up:
  *
- *     static input_switch_t door = {.pin = PIN_DIGITAL_9, .pull_up = true,
+ *     static input_switch_t door = {.pin = GPIO_PIN_DIGITAL_9, .pull_up = true,
  *                                   .state = {.callback_handle = HANDLE_NONE}};
  *
  *     init_input_switch(&door);                    // at startup, before sei()
  *
  *     ISR(PCINT0_vect) {                           // the interrupt for the pin's port
- *         input_switch_handle_interrupt(&door);    // (see pin_interrupt_enable in pins.h)
+ *         input_switch_handle_interrupt(&door);    // (see gpio_interrupt_enable in gpio.h)
  *     }
  *
  *     // in main's loop, once per pass, along with callbacks_time_execute(now):
@@ -61,7 +61,7 @@ typedef struct input_switch_state_raw_t {
  * handle, say) stay ordinary reads.
  */
 typedef struct input_switch_t {
-    pin_id pin; ///< The pin the switch is on.
+    gpio_pin_t pin; ///< The pin the switch is on.
     /// true: the chip's internal pull-up holds the pin HIGH, and the switch connects it to
     /// GND, so "pressed" reads LOW. false: no internal pull-up; there must be an external
     /// pull-down resistor, and the switch connects the pin to 5 V, so "pressed" reads HIGH.
@@ -84,7 +84,7 @@ void init_input_switch(input_switch_t *input_switch);
  * Call every time round the main loop. The new state is accepted later, by a callback, so
  * callbacks_time_execute() must run in the main loop too.
  *
- * @param now       The current time, from time_now().
+ * @param now       The current time, from timer_now().
  * @param debounce  How long the pin must stay steady before a change counts, in ms.
  */
 void input_switch_update(input_switch_t *input_switch, millis_t now, millis_t debounce);

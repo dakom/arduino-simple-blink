@@ -13,14 +13,14 @@ so over serial (`Starting blink!` / `Stopping blink!`), which you can watch in t
 
 | Part | How |
 | --- | --- |
-| Pins | `helpers/pins` maps board labels (D0–D13, A0–A5) to the DDRx / PORTx / PINx registers |
-| Time | Hardware Timer0 interrupts once per millisecond (16 MHz ÷ 64 ÷ 250) and counts up; `time_now()` reads the count atomically. The count is 64-bit, so it never wraps |
+| GPIO | `lib/hardware/gpio` maps board labels (D0–D13, A0–A5) to the DDRx / PORTx / PINx registers |
+| Time | Hardware Timer0 interrupts once per millisecond (16 MHz ÷ 64 ÷ 250) and counts up; `timer_now()` reads the count atomically. The count is 64-bit, so it never wraps |
 | Main loop | Reads the time once per pass and hands it to everything: due callbacks, then buttons, then lights |
 | Blink | `lights.c` is a chain of timed callbacks: each toggle flips the LED and schedules the next one 250 ms after the last deadline, so the rhythm doesn't drift. Stopping cancels the pending toggle |
-| Buttons | `input_switch` debounces a switch on any pin: a pin-change interrupt counts every change in its level (ignoring other pins that share the interrupt), and each change cancels the pending 20 ms timer and starts a fresh one, so the switch only changes state after 20 ms without changes. `buttons.c` keeps a table of them, one per `button_id_t`; the light switch on D9 is the only one so far |
-| Timed callbacks | `callbacks_time` runs a function once at a set time, handing it a context pointer given when it was scheduled (so one function can serve many LEDs or buttons). One shared queue: a handle pool hands out slots, and a heap keeps them in deadline order |
-| Handles | `handle_pool` gives each callback a handle that goes stale once the callback runs or is cancelled, so an old handle can never cancel a newer callback that reused its slot |
-| Serial | `serial_write_string()` queues text in a 128-byte ring buffer and returns at once; the "data register empty" interrupt sends it a byte at a time at 9600 baud |
+| Buttons | `lib/input/switch` debounces a switch on any pin: a pin-change interrupt counts every change in its level (ignoring other pins that share the interrupt), and each change cancels the pending 20 ms timer and starts a fresh one, so the switch only changes state after 20 ms without changes. `buttons.c` keeps a table of them, one per `button_id_t`; the light switch on D9 is the only one so far |
+| Timed callbacks | `lib/callbacks/time` runs a function once at a set time, handing it a context pointer given when it was scheduled (so one function can serve many LEDs or buttons). One shared queue: a handle pool hands out slots, and a heap keeps them in deadline order |
+| Handles | `lib/collections/handle` gives each callback a handle that goes stale once the callback runs or is cancelled, so an old handle can never cancel a newer callback that reused its slot |
+| Serial | `uart_write_string()` (`lib/hardware/uart`) queues text in a 128-byte ring buffer and returns at once; the "data register empty" interrupt sends it a byte at a time at 9600 baud |
 | Ring buffer | When full, it overwrites the oldest unsent bytes. It's plain C, so it's unit tested on the Mac |
 
 Values shared between the main loop and an interrupt are `volatile`, so every read really
@@ -79,11 +79,13 @@ export PATH="$(brew --prefix avr-gcc@16)/bin:$PATH"  # avr-gcc@16 is keg-only
 | `task clean`      | Delete build output                                   |
 
 Unit tests run on the Mac, not the chip, so they can only test code that doesn't touch the
-hardware registers. Each `test/<name>_test.c` is a small program with its own `main()`, linked
-with the `<name>.c` found anywhere under `src/`, plus every file in `src/helpers/` that doesn't
-include `<avr/...>` or `<util/...>` (so `callbacks_time` can use `handle_pool` and `time_heap`).
-The linker drops whatever a test doesn't use, so a helper that calls hardware code (like
-`input_switch`, which calls `pins`) can sit in that list as long as no test uses it.
+hardware registers. Each test sits at the same path as the code it tests:
+`test/lib/callbacks/time_test.c` tests `src/lib/callbacks/time.c`. Each is a small program with
+its own `main()`, linked with its source file plus every file in `src/lib/` that doesn't include
+`<avr/...>` or `<util/...>` (so `callbacks/time` can use `collections/handle` and
+`collections/time_heap`). The linker drops whatever a test doesn't use, so a file that calls
+hardware code (like `input/switch`, which calls `hardware/gpio`) can sit in that list as long as
+no test uses it.
 `task test` runs them all at the firmware's `CALLBACKS_TIME_CAPACITY`, then the callbacks tests
 again at the library's maximum of 255.
 
@@ -92,9 +94,9 @@ again at the library's maximum of 255.
 | Where | What | Examples |
 | --- | --- | --- |
 | `src/config.h` | Choices for this app: which pins, how fast, how long | `PIN_LED`, `BLINK_SPEED`, `BUTTON_SWITCH_DEBOUNCE_THRESHOLD_MS` |
-| `Taskfile.yml` | Settings that tools, system headers or `src/helpers/` also need, passed to the compiler as `-D...` | `F_CPU`, `BAUD_RATE`, `CALLBACKS_TIME_CAPACITY` |
+| `Taskfile.yml` | Settings that tools, system headers or `src/lib/` also need, passed to the compiler as `-D...` | `F_CPU`, `BAUD_RATE`, `CALLBACKS_TIME_CAPACITY` |
 
-`src/helpers/` never includes `config.h`, so it stays reusable in other projects. Taskfile
+`src/lib/` never includes `config.h`, so it stays reusable in other projects. Taskfile
 settings can be overridden per run, e.g. `task build CALLBACKS_TIME_CAPACITY=8`.
 
 To add a button: give it a `BUTTON_ID_...` in `src/buttons.h`, an entry in the table at the top
@@ -147,17 +149,18 @@ restart the simulation.
 | `src/main.c` | Sets everything up, then runs the main loop |
 | `src/config.h` | App settings: pins and timings |
 | `src/lights.*` | Non-blocking blink, driven by timed callbacks |
-| `src/buttons.*` | The app's buttons: a table of `input_switch`es by `button_id_t`, and their interrupt |
-| `src/helpers/pins.*` | Digital I/O over the DDRx / PORTx / PINx registers, and pin-change interrupts |
-| `src/helpers/serial.*` | Interrupt-driven serial output |
-| `src/helpers/ring_buffer.*` | Fixed-size byte queue used by serial |
-| `src/helpers/time_utils.*` | Millisecond clock from Timer0 |
-| `src/helpers/input_switch.*` | Debounced switch on any pin, with or without the internal pull-up |
-| `src/helpers/callbacks_time.*` | One shared queue of timed callbacks |
-| `src/helpers/handle_pool.*` | Handles that go stale when their slot is freed or reused |
-| `src/helpers/time_heap.*` | Ids ordered by deadline, with removal and rescheduling |
-| `src/helpers/math_utils.*` | Integer rounding division |
-| `test/` | Unit tests that run on the Mac |
+| `src/buttons.*` | The app's buttons: a table of `input_switch_t`s by `button_id_t`, and their interrupt |
+| `src/lib/all.h` | Includes every `lib/` header at once |
+| `src/lib/hardware/gpio.*` | Digital I/O over the DDRx / PORTx / PINx registers, and pin-change interrupts |
+| `src/lib/hardware/uart.*` | Interrupt-driven serial output |
+| `src/lib/hardware/timer.*` | Millisecond clock from Timer0 |
+| `src/lib/input/switch.*` | Debounced switch on any pin, with or without the internal pull-up |
+| `src/lib/callbacks/time.*` | One shared queue of timed callbacks |
+| `src/lib/collections/ring_buffer.*` | Fixed-size byte queue used by the UART |
+| `src/lib/collections/handle.*` | Handles that go stale when their slot is freed or reused |
+| `src/lib/collections/time_heap.*` | Ids ordered by deadline, with removal and rescheduling |
+| `src/lib/math/utils.*` | Integer rounding division |
+| `test/` | Unit tests that run on the Mac, at the same paths as the code they test |
 | `frontend/` | Browser serial monitor (WebSerial), served by `task monitor` |
 | `scripts/find-uno-port.sh` | Finds the Uno's serial port, for `flash` and `monitor:terminal` |
 | `circuit/simple-blink.sim2` | SimulIDE circuit |

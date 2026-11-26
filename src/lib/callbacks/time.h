@@ -10,12 +10,12 @@
  *         ...
  *     }
  *
- *     handle_t h = callbacks_time_insert(led_off, &red_led, time_now() + 500);
+ *     handle_t h = callbacks_time_insert(led_off, &red_led, timer_now() + 500);
  *     ...
  *     callbacks_time_cancel(h);              // changed your mind (false if it already ran)
  *
  *     // in main's loop, once per pass:
- *     callbacks_time_execute(time_now());
+ *     callbacks_time_execute(timer_now());
  *
  * Each callback runs once. For a repeating one, schedule the next run from inside it.
  *
@@ -46,7 +46,7 @@ void init_callbacks_time();
 
 /**
  * @brief Schedule fn(context) to run once, at or after deadline (an absolute time, e.g.
- * time_now() + 500).
+ * timer_now() + 500).
  *
  * @param fn        The function to call. Must not be null.
  * @param context   Handed to fn when it runs; may be nullptr. See the notes above.

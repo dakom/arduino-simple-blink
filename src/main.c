@@ -16,8 +16,8 @@
 int main(void) {
     init_buttons();
     init_lights();
-    init_time();
-    init_serial();
+    init_timer();
+    init_uart();
     init_callbacks_time();
 
     // Interrupts are off after every reset. Turn them on only once everything
@@ -25,7 +25,7 @@ int main(void) {
     sei();
 
     while (true) {
-        millis_t now = time_now();
+        millis_t now = timer_now();
         callbacks_time_execute(now);
         buttons_update(now);
         lights_update(button_is_pressed(BUTTON_ID_LIGHT_SWITCH), now);

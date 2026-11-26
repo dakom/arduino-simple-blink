@@ -7,7 +7,7 @@
 // read must come from memory rather than a copy the compiler kept in a register.
 static volatile millis_t ms_since_start = 0;
 
-void init_time() {
+void init_timer() {
 
     // the CPU ticks at F_CPU per second.
     // To get ticks per millisecond, divide by 1000
@@ -29,7 +29,7 @@ void init_time() {
     TCCR0B |= (1 << CS00) | (1 << CS01);
 }
 
-millis_t time_now() {
+millis_t timer_now() {
     millis_t value;
 
     // millis_t is 8 bytes, we need to avoid a tear: the CPU reads it one byte at a

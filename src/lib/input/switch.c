@@ -16,17 +16,17 @@
 // Whether the switch is pressed right now (not debounced). Pressed reads LOW with the
 // pull-up, where the switch connects the pin to GND, and HIGH with an external pull-down.
 static bool read_pressed(const input_switch_t *input_switch) {
-    pin_flag pressed_level = input_switch->pull_up ? PIN_FLAG_LOW : PIN_FLAG_HIGH;
-    return pin_get_flag(input_switch->pin) == pressed_level;
+    gpio_flag_t pressed_level = input_switch->pull_up ? GPIO_FLAG_LOW : GPIO_FLAG_HIGH;
+    return gpio_get_flag(input_switch->pin) == pressed_level;
 }
 
 void init_input_switch(input_switch_t *input_switch) {
-    // pin_set_config's level for an input picks the pull-up: HIGH turns it on
-    pin_set_config(input_switch->pin, PIN_DIR_INPUT,
-                   input_switch->pull_up ? PIN_FLAG_HIGH : PIN_FLAG_LOW);
+    // gpio_set_config's level for an input picks the pull-up: HIGH turns it on
+    gpio_set_config(input_switch->pin, GPIO_DIR_INPUT,
+                    input_switch->pull_up ? GPIO_FLAG_HIGH : GPIO_FLAG_LOW);
     input_switch->state.pressed = read_pressed(input_switch);
     input_switch->raw.pressed = input_switch->state.pressed;
-    pin_interrupt_enable(input_switch->pin);
+    gpio_interrupt_enable(input_switch->pin);
 }
 
 // The settle callback: runs once a switch's pin has had no changes for the debounce time,

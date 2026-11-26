@@ -5,13 +5,13 @@
 #include <avr/io.h>
 #include <util/atomic.h>
 
-constexpr uint16_t SERIAL_BUFFER_SIZE = 128;
+constexpr uint16_t UART_TX_BUFFER_SIZE = 128;
 
-// Bytes waiting to be sent. Written by serial_write_string(), read by the ISR.
-static ring_buffer_t serial_buffer = {.size = SERIAL_BUFFER_SIZE,
-                                      .queue = (uint8_t[SERIAL_BUFFER_SIZE]){}};
+// Bytes waiting to be sent. Written by uart_write_string(), read by the ISR.
+static ring_buffer_t tx_buffer = {.size = UART_TX_BUFFER_SIZE,
+                                  .queue = (uint8_t[UART_TX_BUFFER_SIZE]){}};
 
-void init_serial() {
+void init_uart() {
 
     // The baud rate register divides the clock: UBRR0 = F_CPU / (16 * baud) - 1.
     // The 16 is because the USART splits each bit into 16 time slices. Serial has
@@ -30,11 +30,11 @@ void init_serial() {
     UCSR0B |= (1 << TXEN0);
 }
 
-void serial_write_string(const char *string) {
-    // The ISR modifies serial_buffer and the register, and could run halfway
+void uart_write_string(const char *string) {
+    // The ISR modifies tx_buffer and the register, and could run halfway
     // through either change, so keep interrupts off until both are done.
     ATOMIC_BLOCK(ATOMIC_RESTORESTATE) {
-        ring_buffer_write_string(&serial_buffer, string);
+        ring_buffer_write_string(&tx_buffer, string);
 
         // there is now data to send, so we need to interrupt
         UCSR0B |= (1 << UDRIE0);
@@ -46,7 +46,7 @@ void serial_write_string(const char *string) {
 // It keeps firing for as long as the register is empty, so once there's nothing
 // left to send it must switch itself off, or the main loop would never run again.
 ISR(USART_UDRE_vect) {
-    auto result = ring_buffer_read_byte(&serial_buffer);
+    auto result = ring_buffer_read_byte(&tx_buffer);
 
     if (!result.exists) {
         // no more data to send, so no need to interrupt

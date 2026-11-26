@@ -13,44 +13,44 @@
 #include <stdint.h>
 
 /** @brief A pin, named by its label on the Uno board. */
-typedef enum pin_id : uint8_t {
-    PIN_DIGITAL_0, ///< Also serial RX.
-    PIN_DIGITAL_1, ///< Also serial TX.
-    PIN_DIGITAL_2,
-    PIN_DIGITAL_3,
-    PIN_DIGITAL_4,
-    PIN_DIGITAL_5,
-    PIN_DIGITAL_6,
-    PIN_DIGITAL_7,
-    PIN_DIGITAL_8,
-    PIN_DIGITAL_9,
-    PIN_DIGITAL_10,
-    PIN_DIGITAL_11,
-    PIN_DIGITAL_12,
-    PIN_DIGITAL_13, ///< Also drives the built-in "L" LED.
-    PIN_ANALOG_0,
-    PIN_ANALOG_1,
-    PIN_ANALOG_2,
-    PIN_ANALOG_3,
-    PIN_ANALOG_4,
-    PIN_ANALOG_5,
-} pin_id;
+typedef enum gpio_pin_t : uint8_t {
+    GPIO_PIN_DIGITAL_0, ///< Also serial RX.
+    GPIO_PIN_DIGITAL_1, ///< Also serial TX.
+    GPIO_PIN_DIGITAL_2,
+    GPIO_PIN_DIGITAL_3,
+    GPIO_PIN_DIGITAL_4,
+    GPIO_PIN_DIGITAL_5,
+    GPIO_PIN_DIGITAL_6,
+    GPIO_PIN_DIGITAL_7,
+    GPIO_PIN_DIGITAL_8,
+    GPIO_PIN_DIGITAL_9,
+    GPIO_PIN_DIGITAL_10,
+    GPIO_PIN_DIGITAL_11,
+    GPIO_PIN_DIGITAL_12,
+    GPIO_PIN_DIGITAL_13, ///< Also drives the built-in "L" LED.
+    GPIO_PIN_ANALOG_0,
+    GPIO_PIN_ANALOG_1,
+    GPIO_PIN_ANALOG_2,
+    GPIO_PIN_ANALOG_3,
+    GPIO_PIN_ANALOG_4,
+    GPIO_PIN_ANALOG_5,
+} gpio_pin_t;
 
 /** @brief Whether a pin senses a voltage or drives one. */
-typedef enum pin_dir : uint8_t {
-    PIN_DIR_INPUT,  ///< Senses the voltage on the pin.
-    PIN_DIR_OUTPUT, ///< Drives the pin to 5 V or 0 V.
-} pin_dir;
+typedef enum gpio_dir_t : uint8_t {
+    GPIO_DIR_INPUT,  ///< Senses the voltage on the pin.
+    GPIO_DIR_OUTPUT, ///< Drives the pin to 5 V or 0 V.
+} gpio_dir_t;
 
 /**
  * @brief A logic level.
  *
  * When written to an input, the level selects the internal pull-up instead.
  */
-typedef enum pin_flag : uint8_t {
-    PIN_FLAG_LOW,  ///< Output: 0 V. Input: pull-up off.
-    PIN_FLAG_HIGH, ///< Output: 5 V. Input: pull-up on.
-} pin_flag;
+typedef enum gpio_flag_t : uint8_t {
+    GPIO_FLAG_LOW,  ///< Output: 0 V. Input: pull-up off.
+    GPIO_FLAG_HIGH, ///< Output: 5 V. Input: pull-up on.
+} gpio_flag_t;
 
 /**
  * @brief Configure a pin's direction and initial level, without glitches.
@@ -60,15 +60,15 @@ typedef enum pin_flag : uint8_t {
  * @param initial_flag  For an output, the starting level.
  *                      For an input, HIGH enables the pull-up (20-50 kOhm).
  */
-void pin_set_config(pin_id id, pin_dir dir, pin_flag initial_flag);
+void gpio_set_config(gpio_pin_t id, gpio_dir_t dir, gpio_flag_t initial_flag);
 
 /**
  * @brief Set an output's level, or switch an input's pull-up on or off.
  *
  * @param id    The pin to write.
- * @param flag  The level to write; see ::pin_flag.
+ * @param flag  The level to write; see ::gpio_flag_t.
  */
-void pin_set_flag(pin_id id, pin_flag flag);
+void gpio_set_flag(gpio_pin_t id, gpio_flag_t flag);
 
 /**
  * @brief Read the level that is physically present on a pin.
@@ -76,9 +76,9 @@ void pin_set_flag(pin_id id, pin_flag flag);
  * An input with no pull-up, pull-down or driver floats and reads unpredictably.
  *
  * @param id  The pin to read.
- * @return    ::PIN_FLAG_HIGH or ::PIN_FLAG_LOW.
+ * @return    ::GPIO_FLAG_HIGH or ::GPIO_FLAG_LOW.
  */
-pin_flag pin_get_flag(pin_id id);
+gpio_flag_t gpio_get_flag(gpio_pin_t id);
 
 /**
  * @brief Run an interrupt every time a pin's level changes, in either direction.
@@ -100,4 +100,4 @@ pin_flag pin_get_flag(pin_id id);
  *
  * @param id  The pin to watch.
  */
-void pin_interrupt_enable(pin_id id);
+void gpio_interrupt_enable(gpio_pin_t id);

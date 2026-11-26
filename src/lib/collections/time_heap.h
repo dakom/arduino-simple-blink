@@ -10,7 +10,7 @@
  *     static time_heap_t queue = TIME_HEAP_WITH_CAPACITY(20);
  *
  *     time_heap_init(&queue);
- *     time_heap_insert(&queue, 3, time_now() + 500);
+ *     time_heap_insert(&queue, 3, timer_now() + 500);
  *     time_heap_entry_t first;
  *     if (time_heap_peek(&queue, &first)) { ... first.id, first.deadline ... }
  *

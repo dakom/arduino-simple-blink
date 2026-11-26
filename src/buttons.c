@@ -47,8 +47,8 @@ bool button_is_pressed(button_id_t button_id) {
 // input_switch_handle_interrupt only counts a change of that button's own level, so
 // calling it for a button that didn't change (or isn't on port B at all) does nothing.
 //
-// Buttons on other ports need their port's interrupt too (see pin_interrupt_enable in
-// pins.h): ISR(PCINT1_vect) for A0-A5, ISR(PCINT2_vect) for D0-D7, with the same loop.
+// Buttons on other ports need their port's interrupt too (see gpio_interrupt_enable in
+// lib/hardware/gpio.h): ISR(PCINT1_vect) for A0-A5, ISR(PCINT2_vect) for D0-D7, with the same loop.
 // Without one, the chip resets the first time such a button changes.
 ISR(PCINT0_vect) {
     for (size_t i = 0; i < BUTTON_ID_COUNT; i++) {

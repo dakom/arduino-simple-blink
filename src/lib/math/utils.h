@@ -1,6 +1,6 @@
 #pragma once
 /**
- * @file math_utils.h
+ * @file utils.h
  * @brief Small integer math helpers (no floating point: the chip has no FPU).
  */
 

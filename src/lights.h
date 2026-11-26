@@ -4,7 +4,7 @@
  * @brief A non-blocking blink, driven by timed callbacks: call lights_update() every time round
  * the main loop.
  *
- * Needs init_time(), init_serial() and init_callbacks_time() to have run, and interrupts
+ * Needs init_timer(), init_uart() and init_callbacks_time() to have run, and interrupts
  * enabled.
  */
 
@@ -22,6 +22,6 @@ void init_lights();
  * callbacks_time_execute() in the main loop too, and one free callbacks_time slot.
  *
  * @param active  Whether the LED should be blinking.
- * @param now     The current time, from time_now().
+ * @param now     The current time, from timer_now().
  */
 void lights_update(bool active, millis_t now);

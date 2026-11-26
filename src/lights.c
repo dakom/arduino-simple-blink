@@ -18,12 +18,12 @@ static blink_state_t state = {};
 // Turn the LED on or off, and remember which.
 static void set_light(blink_state_t *blink, bool light_on) {
     blink->light_on = light_on;
-    pin_set_flag(PIN_LED, light_on ? PIN_FLAG_HIGH : PIN_FLAG_LOW);
+    gpio_set_flag(PIN_LED, light_on ? GPIO_FLAG_HIGH : GPIO_FLAG_LOW);
 }
 
 // Runs every BLINK_SPEED while blinking: flip the LED, then schedule the next flip.
 //
-// The next deadline is the previous one + BLINK_SPEED, not time_now() + BLINK_SPEED: the
+// The next deadline is the previous one + BLINK_SPEED, not timer_now() + BLINK_SPEED: the
 // callback runs a little after its deadline (whenever the main loop gets to it), and
 // counting from the deadline stops that delay adding up, so the blink keeps a steady rhythm.
 //
@@ -41,7 +41,7 @@ static void toggle_light(void *context) {
 }
 
 void init_lights() {
-    pin_set_config(PIN_LED, PIN_DIR_OUTPUT, PIN_FLAG_LOW);
+    gpio_set_config(PIN_LED, GPIO_DIR_OUTPUT, GPIO_FLAG_LOW);
 }
 
 void lights_update(bool active, millis_t now) {
@@ -49,11 +49,11 @@ void lights_update(bool active, millis_t now) {
     if (state.active != active) {
         state.active = active;
         if (!active) {
-            serial_write_string("Stopping blink!\r\n");
+            uart_write_string("Stopping blink!\r\n");
             set_light(&state, false);
             callbacks_time_cancel(state.callback); // ends the chain
         } else {
-            serial_write_string("Starting blink!\r\n");
+            uart_write_string("Starting blink!\r\n");
             // On straight away, then start the chain: first toggle (to off) BLINK_SPEED later
             set_light(&state, true);
             state.next_toggle = now + BLINK_SPEED;

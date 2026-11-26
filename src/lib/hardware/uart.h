@@ -14,7 +14,7 @@
  * Pin D1 belongs to the serial port from then on.
  *
  */
-void init_serial();
+void init_uart();
 
 /**
  * @brief Queue a string to send, without its terminating '\0'.
@@ -22,4 +22,4 @@ void init_serial();
  * Doesn't wait. The queue holds 128 bytes: if more is written before it's sent,
  * the oldest unsent bytes are dropped. Use "\r\n" to end lines in a terminal.
  */
-void serial_write_string(const char *string);
+void uart_write_string(const char *string);

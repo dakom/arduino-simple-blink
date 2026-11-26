@@ -2,8 +2,8 @@
 #include "lib/all.h"
 
 ///////// App-specific config /////////////
-[[maybe_unused]] constexpr pin_id PIN_LED = PIN_DIGITAL_11;
-[[maybe_unused]] constexpr pin_id PIN_SWITCH = PIN_DIGITAL_9;
+[[maybe_unused]] constexpr gpio_pin_t PIN_LED = GPIO_PIN_DIGITAL_11;
+[[maybe_unused]] constexpr gpio_pin_t PIN_SWITCH = GPIO_PIN_DIGITAL_9;
 [[maybe_unused]] constexpr millis_t BUTTON_SWITCH_DEBOUNCE_THRESHOLD_MS = 20;
 
 // Time between toggles, so a full on-off cycle takes twice this.

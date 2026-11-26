@@ -1,7 +1,7 @@
 #pragma once
 /**
  * @file buttons.h
- * @brief The app's buttons and switches, each debounced by helpers/input_switch.
+ * @brief The app's buttons and switches, each debounced by lib/input/switch.
  *
  * Each one has a button_id_t, and its wiring is one entry in the table at the top of
  * buttons.c. A press or release only counts once the pin has been steady for
@@ -34,7 +34,7 @@ void init_buttons();
  * Call every time round the main loop. New states are accepted later, by callbacks, so
  * callbacks_time_execute() must run in the main loop too.
  *
- * @param now  The current time, from time_now().
+ * @param now  The current time, from timer_now().
  */
 void buttons_update(millis_t now);
 

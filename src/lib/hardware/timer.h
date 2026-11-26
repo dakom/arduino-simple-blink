@@ -9,7 +9,7 @@
 #include <stdint.h>
 
 /**
- * @brief Milliseconds since init_time().
+ * @brief Milliseconds since init_timer().
  *
  * 64 bits, so it would take about 584 million years to wrap back to 0: in practice it
  * never does, and times can be compared with a plain `<`. (A 32-bit count would wrap
@@ -22,12 +22,12 @@ typedef uint64_t millis_t;
  *
  * Call once at startup, then enable interrupts with sei().
  */
-void init_time();
+void init_timer();
 
 /**
- * @brief Milliseconds since init_time().
+ * @brief Milliseconds since init_timer().
  *
- * To measure a duration, subtract: `time_now() - start >= interval`. To check a deadline,
- * compare: `time_now() >= deadline`.
+ * To measure a duration, subtract: `timer_now() - start >= interval`. To check a deadline,
+ * compare: `timer_now() >= deadline`.
  */
-millis_t time_now();
+millis_t timer_now();

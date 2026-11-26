@@ -77,7 +77,7 @@ tasks:
       - mkdir -p {{.OUT_DIR}}
       # 1. compile + link every .c file under src/, including subfolders like src/common/,
       #    into an ELF (has debug info, symbols, etc.). -I src lets any file include
-      #    another by its path from src/, e.g. #include "common/pins.h".
+      #    another by its path from src/, e.g. #include "lib/hardware/gpio.h".
       - avr-gcc {{.CFLAGS}} {{.LDFLAGS}} -I {{.SRC_DIR}} $(find {{.SRC_DIR}} -name '*.c' | sort) -o {{.OUT_DIR}}/{{.NAME}}.elf
       # 2. extract just the program bytes as Intel HEX — what SimulIDE / the chip loads
       - avr-objcopy -O ihex -R .eeprom {{.OUT_DIR}}/{{.NAME}}.elf {{.OUT_DIR}}/{{.NAME}}.hex
@@ -154,11 +154,11 @@ tasks:
         screen "$port" {{.BAUD_RATE}}
 
   test:
-    desc: Run the unit tests on this Mac (callbacks_time again at its maximum capacity)
+    desc: Run the unit tests on this Mac (lib/callbacks/time again at its maximum capacity)
     deps: [clangd]
     preconditions:
-      - sh: ls {{.TEST_DIR}}/*_test.c >/dev/null 2>&1
-        msg: 'No tests found — create {{.TEST_DIR}}/<name>_test.c first'
+      - sh: '[ -n "$(find {{.TEST_DIR}} -name "*_test.c")" ]'
+        msg: 'No tests found — create {{.TEST_DIR}}/<path>_test.c first (e.g. {{.TEST_DIR}}/lib/math/utils_test.c)'
     cmds:
       # Every test, at the CALLBACKS_TIME_CAPACITY the firmware uses
       - task: test:run
@@ -170,42 +170,52 @@ tasks:
       - task: test:run
         vars:
           CAPACITY: '{{.CALLBACKS_TIME_MAX_CAPACITY}}'
-          TESTS: callbacks_time
+          TESTS: lib/callbacks/time
 
   test:run:
     internal: true # only called by `test`, not listed in `task --list`
     label: 'test:run-{{.CAPACITY}}-{{.TESTS}}'
     vars:
-      TESTS: '{{.TESTS | default "*"}}' # which test/<name>_test.c to run: a name, or * for all
+      # Which test to run, by its path under test/ without _test.c (e.g. lib/callbacks/time).
+      # Empty runs them all.
+      TESTS: '{{.TESTS | default ""}}'
       OUT_DIR: '{{.BUILD_DIR}}/test/capacity-{{.CAPACITY}}'
     cmds:
       - mkdir -p {{.OUT_DIR}}
       - echo "Tests with CALLBACKS_TIME_CAPACITY={{.CAPACITY}}"
-      # Each test is its own program: compile it with the matching file from src/ (in any
-      # subfolder), run it, and carry on to the next one even if it fails, so you see
-      # every result.
+      # Each test is its own program. test/<path>_test.c tests src/<path>.c (so
+      # test/lib/callbacks/time_test.c tests src/lib/callbacks/time.c): compile the two
+      # together, run it, and carry on to the next one even if it fails, so you see every
+      # result.
       - |
         failed=0
-        for test_file in {{.TEST_DIR}}/{{.TESTS}}_test.c; do
-          name=$(basename "$test_file" _test.c)
-          exe={{.OUT_DIR}}/${name}_test
+        if [ -n "{{.TESTS}}" ]; then
+          test_files="{{.TEST_DIR}}/{{.TESTS}}_test.c"
+        else
+          test_files=$(find {{.TEST_DIR}} -name '*_test.c' | sort)
+        fi
+        for test_file in $test_files; do
+          name=${test_file#{{.TEST_DIR}}/}
+          name=${name%_test.c}
+          exe={{.OUT_DIR}}/$(echo "$name" | tr / _)_test
           echo "── $name"
-          src_file=$(find {{.SRC_DIR}} -name "$name.c")
-          if [ "$(echo "$src_file" | grep -c .)" -ne 1 ]; then
-            echo "   expected exactly one $name.c under {{.SRC_DIR}}/, found: ${src_file:-none}"
+          src_file={{.SRC_DIR}}/$name.c
+          if [ ! -f "$src_file" ]; then
+            echo "   $test_file has no matching $src_file"
             echo "   FAILED"
             failed=$((failed + 1))
             continue
           fi
-          # Also link every helper that doesn't touch the hardware (no <avr/...> or
-          # <util/...> include), so code that uses other helpers can be tested too:
-          # callbacks_time.c needs handle_pool.c and time_heap.c, for example.
-          # -dead_strip: the linker drops code the test never reaches. Some of these helpers
-          # call hardware helpers (input_switch.c calls pins.c), which can't be linked on the
-          # Mac; that's fine as long as the test doesn't use them. If it does, linking fails.
-          helpers=$(grep -L -E '#include <(avr|util)/' {{.SRC_DIR}}/helpers/*.c | grep -v -x "$src_file")
+          # Also link every lib/ file that doesn't touch the hardware (no <avr/...> or
+          # <util/...> include), so code that uses other lib/ code can be tested too:
+          # callbacks/time.c needs collections/handle.c and collections/time_heap.c, for
+          # example. -dead_strip: the linker drops code the test never reaches. Some of these
+          # files call hardware code (input/switch.c calls hardware/gpio.c), which can't be
+          # linked on the Mac; that's fine as long as the test doesn't use them. If it does,
+          # linking fails.
+          libs=$(find {{.SRC_DIR}}/lib -name '*.c' | sort | xargs grep -L -E '#include <(avr|util)/' | grep -v -x "$src_file")
           if xcrun clang {{.HOST_CFLAGS}} -DCALLBACKS_TIME_CAPACITY={{.CAPACITY}} -I {{.SRC_DIR}} \
-               "$test_file" "$src_file" $helpers -Wl,-dead_strip -o "$exe" && "$exe"; then
+               "$test_file" "$src_file" $libs -Wl,-dead_strip -o "$exe" && "$exe"; then
             echo "   passed"
           else
             echo "   FAILED"
@@ -288,7 +298,7 @@ tasks:
           # --target=avr: clang's name for the AVR chip family
           # -xc: treat every file (including .h headers) as C, not C++
           # -nostdinc: don't use the Mac's headers, only avr-gcc's (added below)
-          # -I src: same include path as the build, so "common/pins.h" resolves
+          # -I src: same include path as the build, so "lib/hardware/gpio.h" resolves
           for f in --target=avr -xc {{.CFLAGS_COMMON}} {{.OPT_RELEASE}} -nostdinc -I"$(realpath {{.SRC_DIR}})"; do
             echo "    - $f"
           done
